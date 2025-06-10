@@ -31,8 +31,8 @@ You do **not** need to install the individual libraries manually — the require
 
 1. Clone this repository:
    ```sh
-   git clone https://github.com/FilipeNamorato/MyoMesh.git
-   cd MyoMesh
+   git clone https://github.com/FISIOCOMP-UFJF/3DPipelineBivMesh
+   cd 3DPipelineBivMesh
    ```
 
 2. Create the Conda environment from the provided `.yml`:

@@ -203,7 +203,7 @@ def main():
     # 1-3: reading, grouping, and plotting
     entries = readScar(args.matfile)
     slices = group_by_slice(entries)
-    #plot_slices(slices)
+    plot_slices(slices)
     # 4: save aligned slices
     slices_dir = os.path.join(args.output_path, "slices")
     save_fatias_to_txt(slices, args.shiftx, args.shifty, slices_dir)
