@@ -113,4 +113,3 @@ python3 execAll.py -i ./Patient_1.mat -dx 0.5 -dy 0.5 -dz 0.5 -r 1000 --alpha_en
 - No additional system packages are required if you install via the provided Conda environment.
 - Gmsh binary is already included and used by the pipeline.
 - The `hexa-mesh-from-VTK` project will be cloned and compiled automatically during `config.sh`.
-```
