@@ -14,7 +14,7 @@ for data in data_list:
     os.makedirs(os.path.join(f'{data_dir}/output/{data}', 'contours-txt'), exist_ok=True)
     os.makedirs(os.path.join(f'{data_dir}/output/{data}', 'contours-png'), exist_ok=True)
     try:
-        mat = sio.loadmat(f'{data_dir}/input/paciente_cine_2/Patient_2.mat')
+        mat = sio.loadmat(f'{data_dir}/input/{data}/{data}.mat')
         print('  Arquivo .MAT encontrado.')
     except FileNotFoundError:
         print('  Erro: Arquivo .MAT não encontrado.')
@@ -32,15 +32,14 @@ for data in data_list:
         image = nim.get_fdata()
         X, Y, Z = image.shape
 
-        # Dicionário para armazenar os contornos
         contours_dict = {}
-        #np.empty()
-        endox = np.zeros((80,1,Z))
-        endoy = np.zeros((80,1,Z))
-        rvendox = np.zeros((80,1,Z))
-        rvendoy = np.zeros((80,1,Z))
-        rvepix = np.zeros((80,1,Z))
-        rvepiy = np.zeros((80,1,Z))
+
+        endox = np.full((80,1,Z), np.nan)
+        endoy = np.full((80,1,Z), np.nan)
+        rvendox = np.full((80,1,Z), np.nan)
+        rvendoy = np.full((80,1,Z), np.nan)
+        rvepix = np.full((80,1,Z), np.nan)
+        rvepiy = np.full((80,1,Z), np.nan)
         
         for frame in range(Z):
             # Convertendo a imagem para 2D
@@ -135,7 +134,7 @@ for data in data_list:
             mat['setstruct']['RVEndoY'][0][0] = rvendoy
             mat['setstruct']['RVEpiX'][0][0] = rvepix
             mat['setstruct']['RVEpiY'][0][0] = rvepiy
-            sio.savemat(f'{data_dir}/output/paciente_cine_2/Patient_2_Editado.mat', mat)
+            sio.savemat(f'{data_dir}/output/{data}/{data}_editado.mat', mat)
             print('  Arquivo .MAT reescrito.')
         else:
             print('  Erro: Variável "setstruct" não encontrada no arquivo .MAT.')

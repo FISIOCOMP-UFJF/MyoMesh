@@ -9,7 +9,6 @@ plyFiles/*
 clusters_dbscan/*
 fatias_txt/*
 *.pos
-*.mat
 *.txt
 *.stl
 *.alg
@@ -25,4 +24,4 @@ Testing/
 bin/
 cmake-build-release/
 cmake_install.cmake
-
+hexa-mesh-from-VTK_vtk9
