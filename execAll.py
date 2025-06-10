@@ -217,8 +217,12 @@ def execute_commands(input_file):
     print("===================================================")
     print("Converting msh to alg format...")
     print("===================================================")
+    
+    if flagScar:
+        marked_msh_path = f"{msh_srf}/{patient_id}_marked.msh"
+    else:
+        marked_msh_path = f"{msh_srf}/{patient_id}.msh"
 
-    marked_msh_path = f"{msh_srf}/{patient_id}_marked.msh"
     mesh_output_base = f"{output_dir}/conversionFiles/{patient_id}"
     os.makedirs(os.path.dirname(mesh_output_base), exist_ok=True)
 
