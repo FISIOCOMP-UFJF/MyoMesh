@@ -1,3 +1,4 @@
+import numpy
 import argparse
 import os
 from src.msh2alg.generate_fiber_3D_biv import *
