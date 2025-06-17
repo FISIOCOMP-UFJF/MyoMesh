@@ -230,10 +230,10 @@ if __name__ == '__main__':
                             seg_name = '{0}/seg_{1}_{2}.nii.gz'.format(data_dir, FLAGS.seq_name, fr)
                         nib.save(nim2, seg_name)
                         
-                # Extração de contornos
-                if FLAGS.save_seg:
-                    print('  Finding contours ...')
-                    os.system('python3 common/find_contours.py')
+        # Extração de contornos
+        if FLAGS.save_seg:
+            print('Finding contours ...')
+            os.system('python3 common/find_contours.py')
 
         if FLAGS.process_seq:
             print('Average segmentation time = {:.3f}s per sequence'.format(np.mean(table_time)))
