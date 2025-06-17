@@ -96,7 +96,7 @@ This will:
 
 Basic run:
 ```sh
-python3 execAll.py -i ./Patient_1.mat
+python3 execAll.py -i ./output/paciente_cine_2/paciente_cine_2_editado.mat
 ```
 
 Full run with explicit parameters:
