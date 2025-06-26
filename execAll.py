@@ -18,7 +18,8 @@ def execute_commands(input_file):
     date_str = datetime.now().strftime("%Y%m%d_%H%M")
     output_dir = f"./output/{date_str}/{patient_id}"
     os.makedirs(output_dir, exist_ok=True)
-    
+    aligned_mat_path = f"{output_dir}/{patient_id}.mat"
+
     # Paths for surfaces and intermediate files
     stl_srf = f"{output_dir}/stlFiles"
     msh_srf = f"{output_dir}/mshFiles"
@@ -69,7 +70,7 @@ def execute_commands(input_file):
 
     # Step 2: Execute saveMsh.py
     try:
-        save_msh_command = f"python3 ./src/mat2msh/saveMsh.py --mat {input_file} --output {txt_srf}"
+        save_msh_command = f"python3 ./src/mat2msh/saveMsh.py --mat {aligned_mat_path} --output {txt_srf}"
         subprocess.run(save_msh_command, shell=True, check=True)
     except subprocess.CalledProcessError as e:
         print(f"Error executing saveMsh.py: {e}")
@@ -142,15 +143,15 @@ def execute_commands(input_file):
 
     flagScar = False
     try:
-        data = loadmat(input_file, struct_as_record=False, squeeze_me=True)
+        data = loadmat(aligned_mat_path, struct_as_record=False, squeeze_me=True)
         # Checks if 'setstruct' and 'Roi' exist and if 'Roi' is not empty
         if 'setstruct' in data and hasattr(data['setstruct'], 'Roi') and data['setstruct'].Roi.size > 0:
             flagScar = True
         else:
-            print(f"No 'Roi' data found in '{input_file}' or 'setstruct' is missing/empty.")
+            print(f"No 'Roi' data found in '{aligned_mat_path}' or 'setstruct' is missing/empty.")
             flagScar = False
     except Exception as e:
-        print(f"No ROIs present in '{input_file}'")
+        print(f"No ROIs present in '{aligned_mat_path}'")
         flagScar = False
     
     if flagScar:
@@ -158,13 +159,13 @@ def execute_commands(input_file):
         print("===================================================")
         # Step 6: Execute readScar.py
         try:
-            aligned_mat_path = f"{output_dir}/aligned_patient.mat"
+            
             print(f"Aligned MAT file path: {aligned_mat_path}")
             msh_path = f"{msh_srf}/{patient_id}.msh"
             output_marked = f"{msh_srf}/{patient_id}_marked.msh"
 
             read_scar_command = (
-                f"python3 ./src/mat2msh/readScar.py {input_file} "
+                f"python3 ./src/mat2msh/readScar.py {aligned_mat_path} "
                 f"--shiftx {output_dir}/endo_shifts_x.txt "
                 f"--shifty {output_dir}/endo_shifts_y.txt "
                 f"--output_path {output_dir} "
@@ -177,7 +178,6 @@ def execute_commands(input_file):
         except subprocess.CalledProcessError as e:
             print(f"Error executing readScar.py: {e}")
             return
-    
     print("===================================================")
     print("Generating the mesh with GMSH...")
     print("===================================================")
@@ -258,13 +258,18 @@ def execute_commands(input_file):
     os.remove(f"{output_dir}/endo_shifts_y.txt")
     os.remove(f"{output_dir}/epi_shifts_x.txt")
     os.remove(f"{output_dir}/epi_shifts_y.txt")
-    shutil.rmtree(txt_srf, ignore_errors=True)
-    shutil.rmtree(stl_srf, ignore_errors=True)
-    shutil.rmtree(f"{output_dir}/scarPly", ignore_errors=True)
+    os.remove(f"{output_dir}/{patient_id}.mat")
     shutil.rmtree(f"{output_dir}/slices", ignore_errors=True)
-    shutil.rmtree(f"{output_dir}/scarSTL", ignore_errors=True)
     shutil.rmtree(f"{output_dir}/rois_extruded", ignore_errors=True)
-    shutil.rmtree(f"{output_dir}/plyFiles", ignore_errors=True)
+
+    # Remove directories created during the process
+    # If needed, uncomment the following lines
+
+    #shutil.rmtree(txt_srf, ignore_errors=True)
+    #shutil.rmtree(stl_srf, ignore_errors=True)
+    #shutil.rmtree(f"{output_dir}/scarPly", ignore_errors=True)
+    #shutil.rmtree(f"{output_dir}/scarSTL", ignore_errors=True)
+    #shutil.rmtree(f"{output_dir}/plyFiles", ignore_errors=True)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Execute pipeline for processing a .mat file.")

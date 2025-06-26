@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.io import loadmat, savemat
 from sklearn.linear_model import LinearRegression
+import os
 
 def readMat(mat_filename, RVyes=False, output_dir="."):
     print(f"Reading file: {mat_filename}")
@@ -141,7 +142,13 @@ def readMat(mat_filename, RVyes=False, output_dir="."):
     print("Displacement shifts saved as .txt files.")
 
     # Save the processed file
-    output_filename = f"{output_dir}/aligned_patient.mat"
-    savemat(output_filename, {'setstruct': setstruct}, do_compression=True)
+    filename = os.path.basename(mat_filename)
+    output_filename = f"{output_dir}/{filename}"
+    
+    try:
+        savemat(output_filename, {'setstruct': setstruct}, do_compression=True)
+        print(f"Aligned file saved as: {output_filename}")
+    except Exception as e:
+        print(f"Error saving file: {e}")
     print(f"Aligned file saved as: {output_filename}")
     return endo_shifts_x, endo_shifts_y, epi_shifts_x, epi_shifts_y

@@ -12,43 +12,50 @@ ROIEntry = namedtuple('ROIEntry', ['name', 'z', 'points'])
 def readScar(mat_filename):
     """
     Reads the .mat file and returns a flat list of ROIEntry.
-    Each ROIEntry contains: (e.g., "ROI-1")
+    Each ROIEntry contains:
       - name: ROI name (e.g., "ROI-1")
       - z: slice index where the ROI was annotated
-      - points: list of (x,y) tuples for the ROI points
+      - points: list of (x, y) tuples for the ROI points
+
     Explanation:
-    - "setstruct" is the MATLAB structure containing metadata and ROIs.
-    - For each ROI, X, Y, and Z arrays and names for each element are extracted.
-    - For each sub-slice (index i), the correct name is associated and the points
-      are packaged into Python.
+    - "setstruct" is a MATLAB structure that contains the metadata and a cell array of ROIs.
+    - Each element in setstruct.Roi is a struct with fields like X, Y, Z, and Name.
+    - For each ROI struct, X, Y, and Z arrays are extracted.
+    - A single name is typically associated with each ROI (but may be array-like).
+    - For each slice (index i), the corresponding (x, y) coordinates and Z value
+      are extracted and grouped into ROIEntry objects for use in Python.
     """
 
     print(f"Reading ROIs from: {mat_filename}")
-    data = loadmat(mat_filename)
-    rois = data['setstruct'][0][0]['Roi']
+    data = loadmat(mat_filename, struct_as_record=False, squeeze_me=True)
 
+    roi_cell = data['setstruct'].Roi
     entries = []
-    for idx, roi in enumerate(rois):
-        # Extracts the list of names for each sub-slice
-        raw_names = roi['Name'].flatten()
-        slice_names = []
-        for element in raw_names:
-            # Converts numpy array to string
-            if isinstance(element, np.ndarray):
-                val = element.flat[0]
-            else:
-                val = element
-            slice_names.append(str(val).strip())
-        # Coordinate arrays
-        X = roi['X']; Y = roi['Y']; Z = roi['Z']
-        # For each sub-slice, package an ROIEntry
+
+    for idx, roi in enumerate(roi_cell):
+        # Extract the name of the ROI
+        name = getattr(roi, 'Name', f'ROI-{idx+1}')
+        if isinstance(name, np.ndarray):  # Possivelmente lista de nomes
+            name = name[0] if name.size > 0 else f'ROI-{idx+1}'
+        name = str(name)
+
+        # Extract coordinates
+        X = getattr(roi, 'X', [])
+        Y = getattr(roi, 'Y', [])
+        Z = getattr(roi, 'Z', [])
+
+        
+        if not isinstance(Z, (list, np.ndarray)):
+            Z = [Z]
+            X = [X]
+            Y = [Y]
+
         for i in range(len(Z)):
             z_val = int(np.atleast_1d(Z[i]).flat[0])
             x_arr = np.atleast_1d(X[i]).flatten()
             y_arr = np.atleast_1d(Y[i]).flatten()
             if x_arr.size == 0 or y_arr.size == 0:
                 continue  # no points in this sub-slice
-            name = slice_names[i] if i < len(slice_names) else slice_names[0]
             pts = list(zip(x_arr, y_arr))
             entries.append(ROIEntry(name, z_val, pts))
     return entries
