@@ -21,12 +21,15 @@ def execute_commands(input_file):
     aligned_mat_path = f"{output_dir}/{patient_id}.mat"
 
     # Paths for surfaces and intermediate files
-    stl_srf = f"{output_dir}/stlFiles"
-    msh_srf = f"{output_dir}/mshFiles"
+    stl_srf = f"{output_dir}/patientSTL"
+    msh_srf = f"{output_dir}/patientMsh"
+    txt_srf = f"{output_dir}/patientTxt"
+    ply_srf = f"{output_dir}/patientPly"
     scar_srf = f"{output_dir}/scarSTL"
-    txt_srf = f"{output_dir}/txtFiles"
-    ply_srf = f"{output_dir}/plyFiles"
-    
+    mesh_output_base = f"{output_dir}/fenicsFiles/{patient_id}"
+    carp_output = f"{output_dir}/carpFiles/{patient_id}"
+    alg_output = f"{output_dir}/algFiles/{patient_id}"
+
     if os.path.exists(stl_srf):
         shutil.rmtree(stl_srf)
     os.makedirs(stl_srf, exist_ok=True)
@@ -46,7 +49,19 @@ def execute_commands(input_file):
     if os.path.exists(ply_srf):
         shutil.rmtree(ply_srf)
     os.makedirs(ply_srf, exist_ok=True)
+
+    if os.path.exists(mesh_output_base):
+        shutil.rmtree(mesh_output_base)
+    os.makedirs(os.path.dirname(mesh_output_base), exist_ok=True)
     
+    if os.path.exists(carp_output):
+        shutil.rmtree(carp_output)  
+    os.makedirs(os.path.dirname(carp_output), exist_ok=True)
+    
+    if os.path.exists(alg_output):
+        shutil.rmtree(alg_output)
+    os.makedirs(os.path.dirname(alg_output), exist_ok=True)
+
     # Step 1: Process the .mat file
     print(f"Processing the file: {input_file}")
     try:
@@ -223,14 +238,14 @@ def execute_commands(input_file):
     else:
         marked_msh_path = f"{msh_srf}/{patient_id}.msh"
 
-    mesh_output_base = f"{output_dir}/conversionFiles/{patient_id}"
-    os.makedirs(os.path.dirname(mesh_output_base), exist_ok=True)
 
     try:
         msh2alg_command = (
             f"PYTHONPATH=. python3 ./src/msh2alg/msh2alg.py "
             f"-i {marked_msh_path} "
             f"-o {mesh_output_base} "
+            f"--carp {carp_output} "
+            f"--alg {alg_output} "
             f"-r {args.resolution} "              
             f"--dx {args.dx} --dy {args.dy} --dz {args.dz} "
             f"--alpha_endo_lv {args.alpha_endo_lv} --alpha_epi_lv {args.alpha_epi_lv} "

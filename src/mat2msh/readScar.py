@@ -188,7 +188,7 @@ def generate_surfaces_and_stl(patient_id, rois_dir, ply_dir, stl_dir):
                     f"./convertPly2STL/build/bin/PlyToStl {ply} {stl} 1",
                     shell=True, check=True
                 )
-                print(f"STL created: {stl}")
+                print(f"STL created: {stl}\n")
             except subprocess.CalledProcessError as e:
                 print(f"Error converting {ply} to STL: {e}")
         else:
@@ -212,14 +212,14 @@ def main():
     slices = group_by_slice(entries)
     #plot_slices(slices)
     # 4: save aligned slices
-    slices_dir = os.path.join(args.output_path, "slices")
+    slices_dir = os.path.join(args.output_path, "scarSlicesTxt")
     save_fatias_to_txt(slices, args.shiftx, args.shifty, slices_dir)
 
     print("===================================================")
     print("Construction extruded and saved slices scar files")
     print("===================================================")
     # 5) Simple extrusion of each ROI
-    rois_dir = os.path.join(args.output_path, "rois_extruded")
+    rois_dir = os.path.join(args.output_path, "scarRoisExtruded")
     print(f"Saving extruded ROIs to: {rois_dir}")
     
     save_rois_extruded_to_txt(slices, args.matfile, output_dir=rois_dir)

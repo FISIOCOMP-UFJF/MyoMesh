@@ -1,6 +1,7 @@
 import dolfin as df
 import ldrb
 import meshio
+from msh2carp import gmsh2carp
 
 
 def solve_laplace(mesh, boundary_markers, boundary_values, ldrb_markers):
@@ -31,12 +32,13 @@ def solve_laplace(mesh, boundary_markers, boundary_values, ldrb_markers):
     return u
 
 
-def request_functions(meshname, aux_alpha_endo_lv, aux_alpha_epi_lv, aux_beta_endo_lv, 
+def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alpha_epi_lv, aux_beta_endo_lv, 
                     aux_beta_epi_lv, aux_alpha_endo_sept, aux_alpha_epi_sept, 
                     aux_beta_endo_sept, aux_beta_epi_sept, aux_alpha_endo_rv, 
                     aux_alpha_epi_rv, aux_beta_endo_rv, aux_beta_epi_rv):
 
     #mesh reading converted by dolfin-convert
+
     mesh = df.Mesh(meshname + '.xml')
     materials = df.MeshFunction("size_t", mesh, meshname + '_physical_region.xml')
     ffun = df.MeshFunction("size_t", mesh, meshname + '_facet_region.xml')
@@ -97,7 +99,22 @@ def request_functions(meshname, aux_alpha_endo_lv, aux_alpha_epi_lv, aux_beta_en
         beta_endo_rv=aux_beta_endo_rv,  # Sheet angle on the RV endocardium
         beta_epi_rv=aux_beta_epi_rv,
     )
-
+    #OpenCarp
+    if carpOutput:  # flagCarp
+        print(50*"=", flush = True)
+        print("Converting to CARP...")
+        print(50*"=", flush = True)
+        gmsh_path = pathMesh     # ajuste se arquivo estiver noutro diretório
+        gmsh2carp(
+            gmsh_path,
+            carpOutput,
+            mesh_fenics=mesh,
+            fiber_fn=fiber,
+            sheet_fn=sheet,
+            normal_fn=sheet_normal,
+            round_dec=8,        # ajuste tolerância se necessário
+        )
+        
     fiber.rename("f_0","f_0")
     sheet.rename("s_0","s_0")
     sheet_normal.rename("n_0","n_0")
