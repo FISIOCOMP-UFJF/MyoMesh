@@ -119,20 +119,32 @@ def gmsh2carp(gmshMesh, outputMesh,
         for j in range(num_tags):
             tags.append(int(parts[3+j]))
         region = tags[0] if tags else 1
-        off = 3 + num_tags
+        off = 3 + num_tags #sempre começa em 3 no original, então coloquei off=3+num_tags
 
         if elem_type == 1:  # line
-            n1 = int(parts[off+0]); n2 = int(parts[off+1])
+            n1 = int(parts[off+0])
+            n2 = int(parts[off+1])
             tup = (n1,n2)
         elif elem_type == 2:  # tri
-            n1 = int(parts[off+0]); n2 = int(parts[off+1]); n3 = int(parts[off+2])
+            n1 = int(parts[off+0])
+            n2 = int(parts[off+1])
+            n3 = int(parts[off+2])
             tup = (n1,n2,n3)
         elif elem_type == 5:  # hexa
-            n1 = int(parts[off+0]); n2 = int(parts[off+1]); n3 = int(parts[off+2]); n4 = int(parts[off+3])
-            n5 = int(parts[off+4]); n6 = int(parts[off+5]); n7 = int(parts[off+6]); n8 = int(parts[off+7])
+            n1 = int(parts[off+0])
+            n2 = int(parts[off+1])
+            n3 = int(parts[off+2])
+            n4 = int(parts[off+3])
+            n5 = int(parts[off+4])
+            n6 = int(parts[off+5])
+            n7 = int(parts[off+6])
+            n8 = int(parts[off+7])
             tup = (n1,n2,n3,n4,n5,n6,n7,n8)
         elif elem_type == 4:  # tetra
-            n1 = int(parts[off+0]); n2 = int(parts[off+1]); n3 = int(parts[off+2]); n4 = int(parts[off+3])
+            n1 = int(parts[off+0])
+            n2 = int(parts[off+1])
+            n3 = int(parts[off+2])
+            n4 = int(parts[off+3])
             tup = (n1,n2,n3,n4)
         else:
             # tipo não suportado -> ignora
@@ -242,7 +254,7 @@ def gmsh2carp(gmshMesh, outputMesh,
     return ptsFile, elemFile, fibFile
 
 # ------------------------------------------------------------------ #
-# CLI (opcional; legado simples)
+# (legado)
 # ------------------------------------------------------------------ #
 def _main():
     if (len(sys.argv) < 3):
