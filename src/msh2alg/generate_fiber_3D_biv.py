@@ -119,8 +119,23 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
     sheet.rename("s_0","s_0")
     sheet_normal.rename("n_0","n_0")
 
-    print("Saving...")
+    cell_dim  = mesh.topology().dim()
+    cell_mark = df.MeshFunction("size_t", mesh, cell_dim, 0)
 
+    for facet in df.facets(mesh):
+        tag = ffun[facet]
+        if tag != 0:
+            for cell in df.cells(facet):
+                cell_mark[cell] = tag
+    cell_mark.rename("region_id", "region_id")
+
+    # Convert to DG0 Function
+    V0 = df.FunctionSpace(mesh, "DG", 0) # Scalar field with piecewise constant values
+    region_id = df.Function(V0)
+    region_id.vector()[:] = cell_mark.array()
+    region_id.rename("region_id", "region_id")
+
+    print("Saving…")
     with df.XDMFFile(mesh.mpi_comm(), meshname + ".xdmf") as xdmf:
         xdmf.parameters.update(
         {
@@ -130,10 +145,10 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
         xdmf.write(mesh)
         xdmf.write(fiber, 0)
         xdmf.write(sheet, 0)
-        xdmf.write(sheet_normal,0)
+        xdmf.write(sheet_normal, 0)
         xdmf.write(tecido, 0)
         xdmf.write(u, 0)
-
+        xdmf.write(region_id, 0)   # ← aqui grava sem erro
 
     convert_xdmf_to_vtu(meshname)
 
@@ -141,7 +156,9 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
 
 def convert_xdmf_to_vtu(meshname):
 
+    print(50*"=", flush = True)
     print("Converting .xdmf to .vtu")
+    print(50*"=", flush = True)
     filename = meshname+".xdmf"
     t, point_data, cell_data = None, None, None
 
