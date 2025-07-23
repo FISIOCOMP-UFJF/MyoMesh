@@ -3,11 +3,11 @@
 # Script to convert a mesh from Gmsh to CARP format
 # Bernardo M. Rocha, 2014
 #
-# Patch 2025-07-17: 
+# Patch 2025-07-17:
 #   - Corrigida escrita do .elem (tipo correto, reindex 0-based consistente com .pts, região = 1º tag ou 1).
 #   - Inclusão opcional de fibras LDRB (mesh_fenics + fiber_fn/sheet_fn/normal_fn).
 #   - split(" ") -> split() para parsing mais robusto.
-#   - RESTANTE DO COMPORTAMENTO LEGADO PRESERVADO.
+#   - Adicionado .lon (1 vetor por elemento) mantendo o restante legado.
 #
 import numpy as np
 import os
@@ -40,13 +40,14 @@ def gmsh2carp(gmshMesh, outputMesh,
               normal_fn=None,
               round_dec=8):
     """
-    Converter Gmsh (.msh v2 ASCII) para CARP (.pts/.elem/.fib).
+    Converter Gmsh (.msh v2 ASCII) para CARP (.pts/.elem/.fib/.lon).
     Se mesh_fenics & campos LDRB forem passados, escreve fibras reais nos TETRAs.
-    Caso contrário, .fib = identidade (legado).
+    Caso contrário, .fib = identidade (legado) e .lon não é criado.
     """
     ptsFile  = outputMesh + '.pts'
     elemFile = outputMesh + '.elem'
     fibFile  = outputMesh + '.fib'
+    lonFile  = outputMesh + '.lon'  # pode não ser escrito, dependendo do caso
 
     # ------------------------------------------------------------------
     # Ler cabeçalho (legado: assume ordem fixa)
@@ -75,7 +76,7 @@ def gmsh2carp(gmshMesh, outputMesh,
     id2idx = {}  # mapa Gmsh node ID -> índice 0-based usado no .pts
 
     for i in range(num_nodes):
-        parts = f.readline().split()  # <-- robusto
+        parts = f.readline().split()
         node_id = int(parts[0])
         x, y, z = float(parts[1]), float(parts[2]), float(parts[3])
         vpts[i,0] = x
@@ -84,7 +85,7 @@ def gmsh2carp(gmshMesh, outputMesh,
         id2idx[node_id] = i
 
     if CHANGE_BBOX:
-        vb = bbox(vpts)    
+        vb = bbox(vpts)
         vpts[:,0] = vpts[:,0] + (-1) * vb[0]
         vpts[:,1] = vpts[:,1] + (-1) * vb[2]
         vpts[:,2] = vpts[:,2] + (-1) * vb[4]
@@ -115,7 +116,7 @@ def gmsh2carp(gmshMesh, outputMesh,
     elem_regions = []         # região (1º tag ou 1)
 
     for i in range(num_elements):
-        parts = f.readline().split()  # <-- robusto
+        parts = f.readline().split()
         elem_id   = int(parts[0])
         elem_type = int(parts[1])
         num_tags  = int(parts[2])
@@ -170,32 +171,28 @@ def gmsh2carp(gmshMesh, outputMesh,
     print(" Exported elements: %d" % elements)
 
     # ------------------------------------------------------------------
-    # Escrever .elem (corrigido)
+    # Escrever .elem
     # ------------------------------------------------------------------
-    felem.write("%d\n" % (len(elem_types)))    
+    felem.write("%d\n" % (len(elem_types)))
     for t, nds, r in zip(elem_types, elem_nodes, elem_regions):
-        nds0 = [id2idx[n] for n in nds]  # map Gmsh ID -> 0-based índice pts
-
-        if t == 1:   # line
+        nds0 = [id2idx[n] for n in nds]
+        if t == 1:
             n1,n2 = nds0
             felem.write("Ln %d %d %d\n" % (n1,n2,r))
-        elif t == 2: # tri
+        elif t == 2:
             n1,n2,n3 = nds0
             felem.write("Tr %d %d %d %d\n" % (n1,n2,n3,r))
-        elif t == 5: # hexa
+        elif t == 5:
             n1,n2,n3,n4,n5,n6,n7,n8 = nds0
             felem.write("Hx %d %d %d %d %d %d %d %d %d\n" %
                         (n1,n2,n3,n4,n5,n6,n7,n8,r))
-        elif t == 4: # tetra
+        elif t == 4:
             n1,n2,n3,n4 = nds0
             felem.write("Tt %d %d %d %d %d\n" % (n1,n2,n3,n4,r))
-        # outros tipos já filtrados
     felem.close()
     
     # ------------------------------------------------------------------
-    # Escrever .fib
-    #   - Se campos LDRB não fornecidos -> identidade (legado).
-    #   - Se fornecidos -> fibras reais para TETRAs; outros tipos = identidade.
+    # Escrever .fib e preparar .lon
     # ------------------------------------------------------------------
     ffib = open(fibFile,'w')
 
@@ -204,12 +201,19 @@ def gmsh2carp(gmshMesh, outputMesh,
                 sheet_fn    is not None and
                 normal_fn   is not None)
 
+    lon_lines = []  # só fibra (3 números) por elemento
+
     if not use_ldrb:
-        # legado: tudo identidade
         for _ in range(len(elem_types)):
             ffib.write("%f %f %f %f %f %f %f %f %f\n" % (1,0,0,0,1,0,0,0,1))
+            lon_lines.append((1.0,0.0,0.0))  # cabeçalho=1 -> só fibra
         ffib.close()
-        return ptsFile, elemFile, fibFile
+        # grava .lon mesmo assim? você decide. Aqui vou gravar para consistência:
+        with open(lonFile, "w") as flon:
+            flon.write("1\n")
+            for fval in lon_lines:
+                flon.write("% .8e % .8e % .8e\n" % fval)
+        return ptsFile, elemFile, fibFile, lonFile
 
     # ----- extrair DG0 arrays -----
     f_arr = _extract_vec_dg0(fiber_fn)
@@ -220,43 +224,54 @@ def gmsh2carp(gmshMesh, outputMesh,
     fen_cells  = mesh_fenics.cells()        # (Nc,4) se tetra
     fen_coords = mesh_fenics.coordinates()  # (Nf,3)
 
-    # hash célula FEniCS por coords arredondadas
     fen_hash = {}
     for ci, c in enumerate(fen_cells):
         pts = fen_coords[c]
         key = tuple(sorted(tuple(np.round(pt, round_dec)) for pt in pts))
         fen_hash[key] = ci
 
-    # ----- escrever fibras linha a linha -----
+    IDENT_F = (1.0,0.0,0.0)
+    IDENT_S = (0.0,1.0,0.0)
+    IDENT_N = (0.0,0.0,1.0)
+
     misses = 0
     for t, nds in zip(elem_types, elem_nodes):
-        if t == 4 and len(nds) == 4:  # tetra
-            # coords gmsh
+        if t == 4 and len(nds) == 4:
             try:
                 idxs = [id2idx[n] for n in nds]
-            except KeyError:
-                misses += 1
-                ffib.write("%f %f %f %f %f %f %f %f %f\n" % (1,0,0,0,1,0,0,0,1))
-                continue
-            pts = vpts[idxs]
-            key = tuple(sorted(tuple(np.round(pt, round_dec)) for pt in pts))
-            ci = fen_hash.get(key)
+                key  = tuple(sorted(tuple(np.round(vpts[idx], round_dec)) for idx in idxs))
+                ci   = fen_hash.get(key)
+            except Exception:
+                ci = None
+
             if ci is None:
                 misses += 1
-                ffib.write("%f %f %f %f %f %f %f %f %f\n" % (1,0,0,0,1,0,0,0,1))
+                fval, sval, nval = IDENT_F, IDENT_S, IDENT_N
             else:
-                vals = np.concatenate((f_arr[ci], s_arr[ci], n_arr[ci]))
-                ffib.write("%g %g %g %g %g %g %g %g %g\n" % tuple(vals))
+                fval = tuple(f_arr[ci])
+                sval = tuple(s_arr[ci])
+                nval = tuple(n_arr[ci])
         else:
-            # não-tetra: identidade
-            ffib.write("%f %f %f %f %f %f %f %f %f\n" % (1,0,0,0,1,0,0,0,1))
+            fval, sval, nval = IDENT_F, IDENT_S, IDENT_N
+
+        ffib.write("%g %g %g %g %g %g %g %g %g\n" % (fval + sval + nval))
+        lon_lines.append(fval)
 
     ffib.close()
-
     if misses:
         print(f" [gmsh2carp] Aviso: {misses} tetra(s) sem match de fibra; identidade usada.")
 
-    return ptsFile, elemFile, fibFile
+    # ---- escrever .lon (apenas fibra) ----
+    with open(lonFile, "w") as flon:
+        flon.write("1\n")
+        for fval in lon_lines:
+            flon.write("% .8e % .8e % .8e\n" % fval)
+
+    # sanity
+    assert len(lon_lines) == len(elem_types), "lon size mismatch!"
+
+    return ptsFile, elemFile, fibFile, lonFile
+
 
 # ------------------------------------------------------------------ #
 # (legado)

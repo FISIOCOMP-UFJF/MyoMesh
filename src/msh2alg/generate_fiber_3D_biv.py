@@ -118,7 +118,24 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
     fiber.rename("f_0","f_0")
     sheet.rename("s_0","s_0")
     sheet_normal.rename("n_0","n_0")
+    
+    print(50*'=')
+    # 1) Espaço de funções
+    V_fiber = fiber.function_space()
+    mesh_f  = V_fiber.mesh()
+    dofmap  = V_fiber.dofmap()
 
+    print("=== FunctionSpace do fiber ===")
+    print("  Elemento    :", V_fiber.ufl_element())  # tipo do elemento (DG, Lagrange…)
+    print("  Grau        :", V_fiber.ufl_element().degree())
+    print("  Dim. malha  :", mesh_f.topology().dim())
+    print("  # vértices  :", mesh_f.num_vertices())
+    print("  # células   :", mesh_f.num_cells())
+    print("  # DOFs      :", V_fiber.dim())
+    print("  DOFs por célula :", dofmap.cell_dofs(0).shape[0])
+    print("")
+
+    print(50*'=')
     cell_dim  = mesh.topology().dim()
     cell_mark = df.MeshFunction("size_t", mesh, cell_dim, 0)
 
