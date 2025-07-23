@@ -51,20 +51,25 @@ def gmsh2carp(gmshMesh, outputMesh,
     # ------------------------------------------------------------------
     # Ler cabeçalho (legado: assume ordem fixa)
     # ------------------------------------------------------------------
-    print(gmshMesh)
     f = open(gmshMesh)
-    line = f.readline()  # $MeshFormat
-    line = f.readline()  # versão etc.
-    line = f.readline()  # $EndMeshFormat
-    
-    # ------------------------------------------------------------------
-    # Ler nós
-    # ------------------------------------------------------------------
-    fpts = open(ptsFile,'w')
-    line = f.readline()  # $Nodes (ou $Node legado)
-    line = f.readline()  # num_node
-    num_nodes = int(line)
-    fpts.write("%d\n" % (num_nodes))
+
+    # Skip everything until $EndMeshFormat is found
+    for line in f:
+        if line.strip() == "$EndMeshFormat":
+            break
+
+    # Now look for the $Nodes block (skipping PhysicalNames, Entities, etc)
+    for line in f:
+        if line.strip() == "$Nodes":
+            break
+    else:
+        raise RuntimeError("Invalid .msh file: $Nodes block not found")
+
+    num_nodes = int(f.readline().strip())
+
+    # Começa a escrever o .pts
+    fpts = open(ptsFile, 'w')
+    fpts.write(f"{num_nodes}\n")
 
     vpts   = np.zeros((num_nodes,3))
     id2idx = {}  # mapa Gmsh node ID -> índice 0-based usado no .pts
