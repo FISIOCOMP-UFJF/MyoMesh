@@ -5,6 +5,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.io import loadmat
 
+import meshio, pyvista as pv
+from pathlib import Path
+import warnings
+
 ROIEntry = namedtuple('ROIEntry', ['name', 'z', 'points'])
 
 
@@ -194,6 +198,46 @@ def generate_surfaces_and_stl(patient_id, rois_dir, ply_dir, stl_dir):
         else:
             print(f"PLY file not found for {txt}, skipping STL conversion.")
 
+def msh_tag_to_ply(msh_path, tag=2, ply_path="fibrosis_surface.ply"):
+    msh_path, ply_path = Path(msh_path), Path(ply_path)
+    msh = meshio.read(msh_path)
+
+    all_t, all_tags = [], []
+    for i, cb in enumerate(msh.cells):
+        if cb.type == "tetra":
+            all_t.append(cb.data)
+            all_tags.append(msh.cell_data["gmsh:physical"][i])
+    if not all_t:
+        raise ValueError("Sem tetra no .msh.")
+
+    tets = np.vstack(all_t)
+    tags = np.concatenate(all_tags)
+    mask = tags == tag
+    if not np.any(mask):
+        warnings.warn(f"Nenhum tetra com tag {tag}.")
+        return pv.PolyData()
+
+    sel = tets[mask]
+    n = sel.shape[0]
+    cells = np.hstack((np.full((n,1), 4, np.int32), sel)).ravel()
+
+    try:
+        celltypes = np.full(n, pv.CellType.TETRA, np.uint8)
+    except AttributeError:
+        import vtk
+        celltypes = np.full(n, vtk.VTK_TETRA, np.uint8)
+
+    ug = pv.UnstructuredGrid(cells, celltypes, msh.points)
+    surf = ug.extract_surface()
+    try:
+        surf = surf.clean(inplace=False).triangulate(inplace=False)
+    except TypeError:
+        surf = surf.clean().triangulate(inplace=False)
+
+    surf.save(ply_path, binary=False)
+    print(f"[PLY] salvo (ASCII): {ply_path}")
+    return surf
+
 
 # MAIN: full execution
 def main():
@@ -228,8 +272,8 @@ def main():
     print("===================================================")
 
     # 6) Generation of surfaces and STL from the extrusions
-    ply_dir = os.path.join(args.output_path, "scarPly")
-    stl_dir = os.path.join(args.output_path, "scarSTL")
+    ply_dir = os.path.join(args.output_path, "scarPly_raw")
+    stl_dir = os.path.join(args.output_path, "scarSTL_raw")
     generate_surfaces_and_stl(args.patient_id, rois_dir, ply_dir, stl_dir)
 
 

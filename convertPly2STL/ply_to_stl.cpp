@@ -22,17 +22,22 @@ int main(int argc, char *argv[])
     // 1) input.ply
     // 2) output.stl
     // Ex.: ./program input.ply output.stl 0
-    if (argc < 4)
-    {
+    if (argc < 4) {
         std::cerr << "Usage: " << argv[0]
-                  << " input.ply output.stl flagScar(0 or 1)" << std::endl;
+                << " input.ply output.stl scar(0/1)"
+                << " [smooth(0/1)=1] [relax=0.05] [iters=200]\n";
         return EXIT_FAILURE;
     }
 
-    // Argumentos
     std::string inputFileName = argv[1];
     std::string outputFileName = argv[2];
-    bool flagScar = (std::stoi(argv[3]) != 0);
+    bool scarRawFlag = (std::stoi(argv[3]) != 0);
+
+    // argumentos opcionais
+    int    scarSmoothFlag = (argc > 4) ? std::stoi(argv[4]) : 0;
+    double relaxation     = (argc > 5) ? std::stod(argv[5]) : 0.05;
+    int    iterations     = (argc > 6) ? std::stoi(argv[6]) : 300;
+
 
     // Leitura do arquivo PLY
     vtkSmartPointer<vtkPLYReader> reader = vtkSmartPointer<vtkPLYReader>::New();
@@ -45,23 +50,25 @@ int main(int argc, char *argv[])
     
     vtkSmartPointer<vtkSmoothPolyDataFilter> smoother = vtkSmartPointer<vtkSmoothPolyDataFilter>::New();
     // Suavização da malha
-    if (!flagScar){
+    if (!scarRawFlag){
         smoother->SetInputData(originalMesh);
     }
 
     // Define o fator de suavização conforme flagScar
-    if(flagScar)
+    if(scarSmoothFlag)
+        smoother->SetRelaxationFactor(relaxation);
+    else if(scarRawFlag)
         smoother->SetRelaxationFactor(0.0002);
-    else
-        smoother->SetRelaxationFactor(0.02);
-    if(!flagScar){
+    
+    if(!scarRawFlag){
         smoother->SetNumberOfIterations(200);
+        smoother->SetRelaxationFactor(0.02);
         smoother->BoundarySmoothingOff();
         smoother->BoundarySmoothingOff();
     }
     vtkSmartPointer<vtkPolyData> meshForNormals;
-    
-    if (!flagScar){
+
+    if (!scarRawFlag){
         smoother->Update();
         meshForNormals = smoother->GetOutput();
     }else

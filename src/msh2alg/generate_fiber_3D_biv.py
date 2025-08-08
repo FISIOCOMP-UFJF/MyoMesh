@@ -104,7 +104,7 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
         print(50*"=", flush = True)
         print("Converting to CARP...")
         print(50*"=", flush = True)
-        gmsh_path = pathMesh     # ajuste se arquivo estiver noutro diretório
+        gmsh_path = pathMesh
         gmsh2carp(
             gmsh_path,
             carpOutput,
@@ -165,7 +165,7 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
         xdmf.write(sheet_normal, 0)
         xdmf.write(tecido, 0)
         xdmf.write(u, 0)
-        xdmf.write(region_id, 0)   # ← aqui grava sem erro
+        xdmf.write(region_id, 0)   # <- gravando região sem erro
 
     convert_xdmf_to_vtu(meshname)
 

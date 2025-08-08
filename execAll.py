@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 import subprocess
 from src.mat2msh.readMat import readMat
+from src.mat2msh.readScar import msh_tag_to_ply
 import argparse
 import shutil
 from scipy.io import loadmat
@@ -25,10 +26,21 @@ def execute_commands(input_file):
     msh_srf = f"{output_dir}/patientMsh"
     txt_srf = f"{output_dir}/patientTxt"
     ply_srf = f"{output_dir}/patientPly"
-    scar_srf = f"{output_dir}/scarSTL"
+    scar_srf = f"{output_dir}/scarSTL_raw"
+    scar_ply_smooth = f"{output_dir}/scarPly"
+    scar_stl_smooth = f"{output_dir}/scarSTL"
     mesh_output_base = f"{output_dir}/fenicsFiles/{patient_id}"
     carp_output = f"{output_dir}/carpFiles/{patient_id}"
     alg_output = f"{output_dir}/algFiles/{patient_id}"
+    
+
+    if os.path.exists(scar_ply_smooth):
+        shutil.rmtree(scar_ply_smooth)
+    os.makedirs(scar_ply_smooth, exist_ok=True)
+
+    if os.path.exists(scar_stl_smooth):
+        shutil.rmtree(scar_stl_smooth)
+    os.makedirs(scar_stl_smooth, exist_ok=True)
 
     if os.path.exists(stl_srf):
         shutil.rmtree(stl_srf)
@@ -208,9 +220,9 @@ def execute_commands(input_file):
     if flagScar:
         print("")
         print("===================================================")
-        print("Marking the mesh with the scar files...")
+        print("Processing scar files...")
         print("===================================================")
-        # Step 7: Execute mark_fibrosis_script.py
+        # Step 7: Execute mark_fibrosis_script.py for first marking
         try:
             msh_path = f"{msh_srf}/{patient_id}.msh"
             output_marked = f"{msh_srf}/{patient_id}_marked.msh"
@@ -228,13 +240,50 @@ def execute_commands(input_file):
         except subprocess.CalledProcessError as e:
             print(f"Error executing mark_fibrosis_script.py: {e}")
             return
+        
 
+        print("===================================================")
+        print("Marking fibrosis in the mesh...")
+        print("===================================================")
+        msh_path = f"{msh_srf}/{patient_id}_marked.msh"
+        msh_tag_to_ply(msh_path, 2, scar_ply_smooth+f"/{patient_id}_fibrosi.ply")
+        
+        # Converte o PLY da fibrose para STL usando PlyToStl
+        ply_file = scar_ply_smooth + f"/{patient_id}_fibrosi.ply"
+        stl_output = scar_stl_smooth + f"/{patient_id}_fibrosi.stl"
+
+        try:
+            convert_command = f"./convertPly2STL/build/bin/PlyToStl {ply_file} {stl_output} 0 1 {args.relaxation} {args.iterations}"
+            subprocess.run(convert_command, shell=True, check=True)
+            print(f"STL da fibrose gerado com sucesso: {stl_output}")
+        except subprocess.CalledProcessError as e:
+            print(f"Erro ao converter {ply_file} para STL: {e}")
+            return
+
+        try:
+            msh_path = f"{msh_srf}/{patient_id}.msh"
+            output_marked = f"{msh_srf}/{patient_id}_marked_smooth.msh"
+            mark_scar_command = (
+                f"python3 ./src/mat2msh/markFibroseFromMsh.py "
+                f"--msh {msh_path} "
+                f"--stl_dir {scar_stl_smooth} "
+                f"--output_path {output_marked}"
+            )
+            subprocess.run(mark_scar_command, shell=True, check=True)
+            print("===================================================")
+            print("Fibrosis successfully marked in the mesh.")
+            print("===================================================")
+
+        except subprocess.CalledProcessError as e:
+            print(f"Error executing mark_fibrosis_script.py: {e}")
+            return
+    
     print("===================================================")
     print("Converting msh to alg format...")
     print("===================================================")
     
     if flagScar:
-        marked_msh_path = f"{msh_srf}/{patient_id}_marked.msh"
+        marked_msh_path = output_marked
     else:
         marked_msh_path = f"{msh_srf}/{patient_id}.msh"
 
@@ -282,8 +331,8 @@ def execute_commands(input_file):
 
     #shutil.rmtree(txt_srf, ignore_errors=True)
     #shutil.rmtree(stl_srf, ignore_errors=True)
-    #shutil.rmtree(f"{output_dir}/scarPly", ignore_errors=True)
-    #shutil.rmtree(f"{output_dir}/scarSTL", ignore_errors=True)
+    #shutil.rmtree(f"{output_dir}/scarPly_raw", ignore_errors=True)
+    #shutil.rmtree(f"{output_dir}/scarSTL_raw", ignore_errors=True)
     #shutil.rmtree(f"{output_dir}/plyFiles", ignore_errors=True)
 
 if __name__ == "__main__":
@@ -294,6 +343,9 @@ if __name__ == "__main__":
     parser.add_argument('-dx', type=float, default=0.5, help='dx')
     parser.add_argument('-dy', type=float, default=0.5, help='dy')
     parser.add_argument('-dz', type=float, default=0.5, help='dz')
+
+    parser.add_argument('--relaxation', type=float, default=0.05, help='Relaxation factor for mesh smoothing')
+    parser.add_argument('--iterations', type=int, default=500, help='Number of iterations for mesh smoothing')
 
     parser.add_argument('--alpha_endo_lv', type=float, default=30, help='Fiber angle on the LV endocardium')
     parser.add_argument('--alpha_epi_lv', type=float, default=-30, help='Fiber angle on the LV epicardium')
