@@ -246,14 +246,14 @@ def execute_commands(input_file):
         print("Marking fibrosis in the mesh...")
         print("===================================================")
         msh_path = f"{msh_srf}/{patient_id}_marked.msh"
-        msh_tag_to_ply(msh_path, 2, scar_ply_smooth+f"/{patient_id}_fibrosi.ply")
+        msh_tag_to_ply(msh_path, 2, scar_ply_smooth+f"/{patient_id}_fibrosis.ply")
         
         # Converte o PLY da fibrose para STL usando PlyToStl
-        ply_file = scar_ply_smooth + f"/{patient_id}_fibrosi.ply"
-        stl_output = scar_stl_smooth + f"/{patient_id}_fibrosi.stl"
+        ply_file = scar_ply_smooth + f"/{patient_id}_fibrosis.ply"
+        stl_output = scar_stl_smooth + f"/{patient_id}_fibrosis.stl"
 
         try:
-            convert_command = f"./convertPly2STL/build/bin/PlyToStl {ply_file} {stl_output} 0 1 {args.relaxation} {args.iterations}"
+            convert_command = f"./convertPly2STL/build/bin/PlyToStl {ply_file} {stl_output} 0 1 {args.relaxation} {args.iterations} 2"
             subprocess.run(convert_command, shell=True, check=True)
             print(f"STL da fibrose gerado com sucesso: {stl_output}")
         except subprocess.CalledProcessError as e:
@@ -345,7 +345,7 @@ if __name__ == "__main__":
     parser.add_argument('-dz', type=float, default=0.5, help='dz')
 
     parser.add_argument('--relaxation', type=float, default=0.05, help='Relaxation factor for mesh smoothing')
-    parser.add_argument('--iterations', type=int, default=500, help='Number of iterations for mesh smoothing')
+    parser.add_argument('--iterations', type=int, default=200, help='Number of iterations for mesh smoothing')
 
     parser.add_argument('--alpha_endo_lv', type=float, default=30, help='Fiber angle on the LV endocardium')
     parser.add_argument('--alpha_epi_lv', type=float, default=-30, help='Fiber angle on the LV epicardium')

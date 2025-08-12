@@ -1,10 +1,8 @@
-import sys, os, glob, subprocess, argparse
+import os, glob, subprocess, argparse
 from collections import namedtuple, defaultdict
-
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.io import loadmat
-
 import meshio, pyvista as pv
 from pathlib import Path
 import warnings
@@ -185,11 +183,11 @@ def generate_surfaces_and_stl(patient_id, rois_dir, ply_dir, stl_dir):
             print(f"Error generating PLY for {txt}: {e}")
             continue
 
-        # 2) Converts PLY -> STL
+        # 2) Converts PLY -> STL (primeiro estágio - fechamento)
         if os.path.exists(ply):
             try:
                 subprocess.run(
-                    f"./convertPly2STL/build/bin/PlyToStl {ply} {stl} 1",
+                    f"./convertPly2STL/build/bin/PlyToStl {ply} {stl} 1 1 0.05 200 1",
                     shell=True, check=True
                 )
                 print(f"STL created: {stl}\n")
@@ -198,7 +196,7 @@ def generate_surfaces_and_stl(patient_id, rois_dir, ply_dir, stl_dir):
         else:
             print(f"PLY file not found for {txt}, skipping STL conversion.")
 
-def msh_tag_to_ply(msh_path, tag=2, ply_path="fibrosis_surface.ply"):
+def msh_tag_to_ply(msh_path, tag=2, ply_path="fibrose_surface.ply"):
     msh_path, ply_path = Path(msh_path), Path(ply_path)
     msh = meshio.read(msh_path)
 
