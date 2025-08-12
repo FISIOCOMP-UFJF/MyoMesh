@@ -143,9 +143,6 @@ def save_structures_to_txt(mat_filename, output_dir):
             num_points = x_coords.shape[0]
 
             # Create Z values starting at 0 for valid slices
-            #AVALIAR A SOMA DO +1
-                #Estou achando que está havendo uma incompatilidade entre
-                #os dados extraídos do .mat e a forma como o numpy está lidando com eles
             z_base = (valid_indices + 1) * (slice_thickness + slice_gap)
             #print(valid_indices) 
             z_values = np.tile(z_base, (num_points, 1))

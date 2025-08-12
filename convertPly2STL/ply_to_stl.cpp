@@ -1,13 +1,12 @@
 #include <vtkSmartPointer.h>
 #include <vtkPLYReader.h>
+#include <vtkSTLReader.h>
 #include <vtkSmoothPolyDataFilter.h>
 #include <vtkPolyDataNormals.h>
 #include <vtkTriangleFilter.h>
 #include <vtkSTLWriter.h>
 #include <vtkCleanPolyData.h>
 
-
-// só quando for scar
 #include <vtkDelaunay3D.h>
 #include <vtkUnstructuredGrid.h>
 #include <vtkXMLUnstructuredGridWriter.h>
@@ -15,57 +14,81 @@
 #include <iostream>
 #include <fstream>
 #include <string>
-#include <cstdlib> // para std::stoi
+#include <cstdlib>   // std::stoi, std::stod
+#include <algorithm> // std::transform
+#include <cctype>    // std::tolower
 
 int main(int argc, char *argv[])
 {
-    // 1) input.ply
-    // 2) output.stl
-    // Ex.: ./program input.ply output.stl 0
-    if (argc < 4)
-    {
+    if (argc < 4) {
         std::cerr << "Usage: " << argv[0]
-                  << " input.ply output.stl flagScar(0 or 1)" << std::endl;
+                  << " input.[ply|stl] output.stl scar(0/1)"
+                  << " [smooth(0/1)=1] [relax=0.05] [iters=200] [scar_stage(1|2)=2]\n";
         return EXIT_FAILURE;
     }
 
-    // Argumentos
-    std::string inputFileName = argv[1];
-    std::string outputFileName = argv[2];
-    bool flagScar = (std::stoi(argv[3]) != 0);
+    const std::string inputFileName  = argv[1];
+    const std::string outputFileName = argv[2];
+    const bool isScar = (std::stoi(argv[3]) != 0);
 
-    // Leitura do arquivo PLY
-    vtkSmartPointer<vtkPLYReader> reader = vtkSmartPointer<vtkPLYReader>::New();
-    reader->SetFileName(inputFileName.c_str());
-    reader->Update();
+    // Defaults alinhados ao Usage
+    int    doSmooth   = (argc > 4) ? std::stoi(argv[4]) : 1;      // 1 = apply smooth
+    double relaxation = (argc > 5) ? std::stod(argv[5]) : 0.05;   // relaxation factor
+    int    iterations = (argc > 6) ? std::stoi(argv[6]) : 200;    // iterations
+    int    scarStage  = (argc > 7) ? std::stoi(argv[7]) : 2;      // 1=closure; 2=refinement
 
-    // Guardar a malha original antes de suavizar
-    vtkSmartPointer<vtkPolyData> originalMesh = reader->GetOutput();
-    originalMesh->Register(nullptr); // garante que não seja desalocado prematuramente
+    // Stage 1 (closure) for fibrosis: smooth force and fixed relaxation=0.0002
+    if (isScar && scarStage == 1) {
+        doSmooth   = 1;
+        relaxation = 0.0002;   
+        
+    }
+
+    auto loadPolyData = [](const std::string& path) -> vtkSmartPointer<vtkPolyData> {
+        std::string ext;
+        if (auto pos = path.find_last_of('.'); pos != std::string::npos)
+            ext = path.substr(pos);
+        std::transform(ext.begin(), ext.end(), ext.begin(),
+                       [](unsigned char c){ return std::tolower(c); });
+
+        if (ext == ".ply") {
+            auto r = vtkSmartPointer<vtkPLYReader>::New();
+            r->SetFileName(path.c_str());
+            r->Update();
+            return r->GetOutput();
+        } else if (ext == ".stl") {
+            auto r = vtkSmartPointer<vtkSTLReader>::New();
+            r->SetFileName(path.c_str());
+            r->Update();
+            return r->GetOutput();
+        } else {
+            std::cerr << "Extensão não suportada: " << ext << " (use .ply ou .stl)\n";
+            return nullptr;
+        }
+    };
+
     
-    vtkSmartPointer<vtkSmoothPolyDataFilter> smoother = vtkSmartPointer<vtkSmoothPolyDataFilter>::New();
-    // Suavização da malha
-    if (!flagScar){
+    vtkSmartPointer<vtkPolyData> originalMesh = loadPolyData(inputFileName);
+    if (!originalMesh || originalMesh->GetNumberOfPoints() == 0) {
+        std::cerr << "Erro: malha vazia ou inválida em '" << inputFileName << "'.\n";
+        return EXIT_FAILURE;
+    }
+    originalMesh->Register(nullptr); // evita desalocação antecipada
+
+    vtkSmartPointer<vtkPolyData> meshForNormals = originalMesh;
+
+    // Suavização (apenas se solicitado)
+    vtkSmartPointer<vtkSmoothPolyDataFilter> smoother;
+    if (doSmooth) {
+        smoother = vtkSmartPointer<vtkSmoothPolyDataFilter>::New();
         smoother->SetInputData(originalMesh);
-    }
-
-    // Define o fator de suavização conforme flagScar
-    if(flagScar)
-        smoother->SetRelaxationFactor(0.0002);
-    else
-        smoother->SetRelaxationFactor(0.02);
-    if(!flagScar){
-        smoother->SetNumberOfIterations(200);
+        smoother->SetNumberOfIterations(iterations);
+        smoother->SetRelaxationFactor(relaxation);
+        smoother->FeatureEdgeSmoothingOff();
         smoother->BoundarySmoothingOff();
-        smoother->BoundarySmoothingOff();
-    }
-    vtkSmartPointer<vtkPolyData> meshForNormals;
-    
-    if (!flagScar){
         smoother->Update();
         meshForNormals = smoother->GetOutput();
-    }else
-        meshForNormals = originalMesh;
+    }
 
     // Gera as normais a partir da malha adequada
     vtkSmartPointer<vtkPolyDataNormals> normals =
@@ -81,48 +104,49 @@ int main(int argc, char *argv[])
     triangleFilter->SetInputData(normals->GetOutput());
     triangleFilter->Update();
 
-   // Limpa duplicatas
-    vtkSmartPointer<vtkCleanPolyData> cleaner =
-        vtkSmartPointer<vtkCleanPolyData>::New();
+    // Limpeza
+    auto cleaner = vtkSmartPointer<vtkCleanPolyData>::New();
     cleaner->SetInputData(triangleFilter->GetOutput());
+    if (isScar && scarStage == 1) {
+        cleaner->PointMergingOff(); // no fechamento, preserva contagem/índices
+    } else {
+        cleaner->PointMergingOn();  // no ajuste fino, permite merge
+    }
     cleaner->Update();
 
     // Malha final de superfície
     vtkSmartPointer<vtkPolyData> finalMesh = cleaner->GetOutput();
 
-    // (Opcional) mapeamento de vértices
-    if (originalMesh->GetNumberOfPoints() == finalMesh->GetNumberOfPoints())
-    {
+    // (Opcional) mapeamento de vértices (só se contagem não mudou)
+    if (originalMesh->GetNumberOfPoints() == finalMesh->GetNumberOfPoints()) {
         std::ofstream mapFile("vertex_mapping.txt");
-        if (mapFile.is_open())
-        {
+        if (mapFile.is_open()) {
             vtkIdType N = originalMesh->GetNumberOfPoints();
-            for (vtkIdType i = 0; i < N; ++i)
-            {
+            for (vtkIdType i = 0; i < N; ++i) {
                 double o[3], s[3];
                 originalMesh->GetPoint(i, o);
-                finalMesh   ->GetPoint(i, s);
+                finalMesh->GetPoint(i, s);
                 mapFile << i << " "
                         << o[0] << " " << o[1] << " " << o[2] << " "
                         << s[0] << " " << s[1] << " " << s[2] << "\n";
             }
-        }
-        else
-        {
-            std::cerr << "Could not open 'vertex_mapping.txt'\n";
+        } else {
+            std::cerr << "Aviso: não foi possível abrir 'vertex_mapping.txt'.\n";
         }
     }
 
-
-    // Escreve a malha final em formato STL
-    vtkSmartPointer<vtkSTLWriter> writer = vtkSmartPointer<vtkSTLWriter>::New();
+    // Escrita STL
+    auto writer = vtkSmartPointer<vtkSTLWriter>::New();
     writer->SetFileName(outputFileName.c_str());
     writer->SetInputData(finalMesh);
-    writer->SetFileTypeToASCII();
-    writer->Write();
+    writer->SetFileTypeToASCII(); // use SetFileTypeToBinary() se preferir menor tamanho
+    if (!writer->Write()) {
+        std::cerr << "Erro ao escrever STL em '" << outputFileName << "'.\n";
+        originalMesh->Delete();
+        return EXIT_FAILURE;
+    }
 
-    // Libera a referência extra do originalMesh
+    // Libera referência extra
     originalMesh->Delete();
-
     return EXIT_SUCCESS;
 }

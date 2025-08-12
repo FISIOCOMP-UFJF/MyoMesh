@@ -31,27 +31,29 @@ def convert_msh_to_xml(pathMesh, meshname):
 def run_msh2alg(
     pathMesh,
     meshname,
+    carp,
+    alg,
     dx=0.5, dy=0.5, dz=0.5,
     discretization=1000,
     alpha_endo_lv=30, alpha_epi_lv=-30, beta_endo_lv=0, beta_epi_lv=0,
     alpha_endo_sept=60, alpha_epi_sept=-60, beta_endo_sept=0, beta_epi_sept=0,
     alpha_endo_rv=80, alpha_epi_rv=-80, beta_endo_rv=0, beta_epi_rv=0
 ):
-
+    print(carp)
     convert_msh_to_xml(pathMesh, meshname)
-    request_functions(meshname, alpha_endo_lv, alpha_epi_lv, beta_endo_lv, 
+    request_functions(pathMesh, meshname, carp, alpha_endo_lv, alpha_epi_lv, beta_endo_lv, 
                 beta_epi_lv, alpha_endo_sept, alpha_epi_sept, beta_endo_sept,
                 beta_epi_sept, alpha_endo_rv, alpha_epi_rv, 
                 beta_endo_rv, beta_epi_rv)    
-    print("================================================================================", flush = True)
+    print(50*"=", flush = True)
     print("Converting to alg...")
     run_command_live([
-        './bin/HexaMeshFromVTK', '-t',
+        './bin/HexaMeshFromVTK',
         '-i', f"../{meshname}.vtu",
         '--dx', str(dx), '--dy', str(dy), '--dz', str(dz),
         '-r', str(discretization),
         '-c', '../src/msh2alg/conf.ini',
-        '-o', f"../{meshname}.alg"
+        '-o', f"../{alg}.alg"
     ], cwd='./hexa-mesh-from-VTK_vtk9/')
 
 
@@ -61,6 +63,8 @@ if __name__ == "__main__":
     parser.add_argument('-i', type=str, default='', help='Path to .msh input file')
     parser.add_argument('-o', type=str, default='patient', help='Output base name (.vtu, .alg)')
     parser.add_argument('-r', type=int, default=1000, help='Discretization resolution')
+    parser.add_argument('--carp', type=str, default='', help='Output OpenCARP')
+    parser.add_argument('--alg', type=str, default='', help='Output OpenAlg')
 
     parser.add_argument('--dx', type=float, default=0.5)
     parser.add_argument('--dy', type=float, default=0.5)
@@ -86,6 +90,8 @@ if __name__ == "__main__":
     run_msh2alg(
         pathMesh=args.i,
         meshname=args.o,
+        carp=args.carp,
+        alg=args.alg,
         discretization=args.r,
         dx=args.dx, dy=args.dy, dz=args.dz,
         alpha_endo_lv=args.alpha_endo_lv, alpha_epi_lv=args.alpha_epi_lv,
@@ -93,5 +99,5 @@ if __name__ == "__main__":
         alpha_endo_sept=args.alpha_endo_sept, alpha_epi_sept=args.alpha_epi_sept,
         beta_endo_sept=args.beta_endo_sept, beta_epi_sept=args.beta_epi_sept,
         alpha_endo_rv=args.alpha_endo_rv, alpha_epi_rv=args.alpha_epi_rv,
-        beta_endo_rv=args.beta_endo_rv, beta_epi_rv=args.beta_epi_rv
+        beta_endo_rv=args.beta_endo_rv, beta_epi_rv=args.beta_epi_rv,
     )
