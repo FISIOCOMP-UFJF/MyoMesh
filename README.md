@@ -31,8 +31,8 @@ You do **not** need to install the individual libraries manually — the require
 
 1. Clone this repository:
    ```sh
-   git clone https://github.com/FISIOCOMP-UFJF/3DPipelineBivMesh
-   cd 3DPipelineBivMesh
+   git clone https://github.com/FISIOCOMP-UFJF/MyoMesh
+   cd MyoMesh
    ```
 
 2. Create the Conda environment from the provided `.yml`:
@@ -64,7 +64,9 @@ This will:
 - `-i`: Path to the file with heart meshes.
 - `-o`: Name for the output file.
 - `-r`: Discretization resolution in conversion to alg
-- `-dx`, `-dy`, and `-dz`: refer to the discretization for the `.vtu`. Conventionally, we use the value of 0.5.
+- `-dx`, `-dy`, and `-dz`: Refer to the discretization for the `.vtu`. Conventionally, we use the value of 0.5.
+- `--iterations` Number of smoothing iterations. Default value is 200
+- `--relaxation` Relaxation factor controlling smoothing aggressiveness. Default value is 0.05
 - `--alpha_endo_lv`: Fiber angle on the left ventricle (LV) endocardium. Default value is 30°.
 - `--alpha_epi_lv`: Fiber angle on the left ventricle (LV) epicardium. Default value is -30°.
 - `--beta_endo_lv`: Sheet angle on the left ventricle (LV) endocardium. Default value is 0°.
@@ -101,7 +103,7 @@ python3 execAll.py -i ./Patient_1.mat
 
 Full run with explicit parameters:
 ```sh
-python3 execAll.py -i ./Patient_1.mat -dx 0.5 -dy 0.5 -dz 0.5 -r 1000 --alpha_endo_lv 30 --alpha_epi_lv -30 --beta_endo_lv 0 --beta_epi_lv 0 --alpha_endo_sept 60 --alpha_epi_sept -60 --beta_endo_sept 0 --beta_epi_sept 0 --alpha_endo_rv 80 --alpha_epi_rv -80 --beta_endo_rv 0 --beta_epi_rv 0
+python3 execAll.py -i ./Patient_1.mat -dx 0.5 -dy 0.5 -dz 0.5 -r 1000 --iterations 200 --relaxation 0.05 --alpha_endo_lv 30 --alpha_epi_lv -30 --beta_endo_lv 0 --beta_epi_lv 0 --alpha_endo_sept 60 --alpha_epi_sept -60 --beta_endo_sept 0 --beta_epi_sept 0 --alpha_endo_rv 80 --alpha_epi_rv -80 --beta_endo_rv 0 --beta_epi_rv 0
 ```
 
 ---
