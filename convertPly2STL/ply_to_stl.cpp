@@ -33,7 +33,7 @@ int main(int argc, char *argv[])
 
     // Defaults alinhados ao Usage
     int    doSmooth   = (argc > 4) ? std::stoi(argv[4]) : 1;      // 1 = apply smooth
-    double relaxation = (argc > 5) ? std::stod(argv[5]) : 0.05;   // relaxation factor
+    double relaxation = (argc > 5) ? std::stod(argv[5]) : 0.02;   // relaxation factor
     int    iterations = (argc > 6) ? std::stoi(argv[6]) : 200;    // iterations
     int    scarStage  = (argc > 7) ? std::stoi(argv[7]) : 2;      // 1=closure; 2=refinement
 

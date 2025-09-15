@@ -187,7 +187,7 @@ def generate_surfaces_and_stl(patient_id, rois_dir, ply_dir, stl_dir):
         if os.path.exists(ply):
             try:
                 subprocess.run(
-                    f"./convertPly2STL/build/bin/PlyToStl {ply} {stl} 1 1 0.05 200 1",
+                    f"./convertPly2STL/build/bin/PlyToStl {ply} {stl} 1 1 0.0002 200 1",
                     shell=True, check=True
                 )
                 print(f"STL created: {stl}\n")
