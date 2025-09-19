@@ -1,7 +1,7 @@
 #!/bin/bash
 #set -x
 
-dir="3DPipelineBivMesh"
+dir="MyoMesh"
 
 if [ $(basename "$PWD") = "$dir" ]; then
 
