@@ -39,7 +39,12 @@ def run_msh2alg(
     alpha_endo_sept=60, alpha_epi_sept=-60, beta_endo_sept=0, beta_epi_sept=0,
     alpha_endo_rv=80, alpha_epi_rv=-80, beta_endo_rv=0, beta_epi_rv=0
 ):
-    print(carp)
+    #print(carp)
+    # --- ESPELHA O .MSH ANTES DE CONVERTER PARA XML ---
+    mir_msh = os.path.splitext(pathMesh)[0] + "_mirX.msh"
+    mirror_msh_x(pathMesh, mir_msh, about="centroid")  # ou about="bbox" / x0=...
+    pathMesh = mir_msh
+
     convert_msh_to_xml(pathMesh, meshname)
     request_functions(pathMesh, meshname, carp, alpha_endo_lv, alpha_epi_lv, beta_endo_lv, 
                 beta_epi_lv, alpha_endo_sept, alpha_epi_sept, beta_endo_sept,

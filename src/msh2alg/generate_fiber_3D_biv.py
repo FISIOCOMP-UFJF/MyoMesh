@@ -185,3 +185,23 @@ def convert_xdmf_to_vtu(meshname):
 
     mesh = meshio.Mesh(points, cells, point_data=point_data, cell_data=cell_data,)
     mesh.write(meshname+".vtu", file_format="vtu",  )
+
+def mirror_msh_x(in_msh, out_msh, about='centroid', x0=None):
+    """
+    Espelha a malha em relação a um plano perpendicular ao eixo X.
+    Se about='centroid', usa x0 = média dos x.
+    Se about='bbox',    usa x0 = centro do bbox em x.
+    Ou passe x0 explicitamente (float).
+    """
+    m = meshio.read(in_msh)
+    P = m.points.copy()
+    if x0 is None:
+        if about == 'centroid':
+            x0 = P[:,0].mean()
+        elif about == 'bbox':
+            x0 = 0.5*(P[:,0].min() + P[:,0].max())
+        else:
+            raise ValueError("about deve ser 'centroid' ou 'bbox' se x0=None")
+    P[:,0] = 2.0*x0 - P[:,0]         # espelho no plano x = x0
+    m.points = P
+    meshio.write(out_msh, m, file_format='gmsh22', binary = False)  # <-- Gmsh v2 ASCII (compatível com dolfin-convert)
