@@ -399,7 +399,6 @@ def main():
         gz_slices   = extract_contours_all_slices(lbl, value=1, dx=res_x, dy=res_y, invert_y=False)
         core_slices = extract_contours_all_slices(lbl, value=2, dx=res_x, dy=res_y, invert_y=False)
 
-        # Ajuste fixo em Z que você testou (1 unidade aqui)
         z_offset = 1.0 * dz
         print(f"[GZ] Usando z_offset fixo = {z_offset} (mesmas unidades de dz do Segment).")
 
