@@ -170,15 +170,28 @@ def execute_commands(input_file):
 
     flagScar = False
     try:
-        data = loadmat(aligned_mat_path, struct_as_record=False, squeeze_me=True)
-        # Checks if 'setstruct' and 'Roi' exist and if 'Roi' is not empty
-        if 'setstruct' in data and hasattr(data['setstruct'], 'Roi') and data['setstruct'].Roi.size > 0:
-            flagScar = True
-        else:
-            print(f"No 'Roi' data found in '{aligned_mat_path}' or 'setstruct' is missing/empty.")
-            flagScar = False
+        data = loadmat(aligned_mat_path, simplify_cells=True)
+        if "setstruct" in data:
+            ss = data["setstruct"]
+
+            has_roi = False
+            if "Roi" in ss:
+                roi_obj = ss["Roi"]
+                has_roi = roi_obj is not None and roi_obj != []  
+
+            has_gz = False
+            try:
+                _ = ss["Scar"]["GreyZone"]["map"]
+                has_gz = True
+            except Exception:
+                has_gz = False
+
+            flagScar = bool(has_roi or has_gz)
+
+        if not flagScar:
+            print(f"Nenhuma ROI ou GreyZone encontrada em '{aligned_mat_path}'.")
     except Exception as e:
-        print(f"No ROIs present in '{aligned_mat_path}'")
+        print(f"Problema ao verificar scar em '{aligned_mat_path}': {e}")
         flagScar = False
     
     if flagScar:
@@ -196,7 +209,8 @@ def execute_commands(input_file):
                 f"--shiftx {output_dir}/endo_shifts_x.txt "
                 f"--shifty {output_dir}/endo_shifts_y.txt "
                 f"--output_path {output_dir} "
-                f"--patient_id {patient_id}"
+                f"--patient_id {patient_id} "
+                f"--mode greyzone"
             )
 
             subprocess.run(read_scar_command, shell=True, check=True)

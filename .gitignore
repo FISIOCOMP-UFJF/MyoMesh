@@ -14,6 +14,7 @@ fatias_txt/*
 *.stl
 *.alg
 *.msh
+*.log
 
 .ccls-cache/
 .idea/
