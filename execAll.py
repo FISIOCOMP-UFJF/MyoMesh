@@ -210,7 +210,7 @@ def execute_commands(input_file):
                 f"--shifty {output_dir}/endo_shifts_y.txt "
                 f"--output_path {output_dir} "
                 f"--patient_id {patient_id} "
-                f"--mode greyzone"
+                f"--mode greyzone "
             )
 
             subprocess.run(read_scar_command, shell=True, check=True)
@@ -234,62 +234,95 @@ def execute_commands(input_file):
     if flagScar:
         print("")
         print("===================================================")
-        print("Processing scar files...")
+        print("Processing scar files (primeira marcação)...")
         print("===================================================")
-        # Step 7: Execute mark_fibrosis_script.py for first marking
+
+        # 1) Primeira marcação usando STLs crus (scarSTL_raw)
         try:
             msh_path = f"{msh_srf}/{patient_id}.msh"
             output_marked = f"{msh_srf}/{patient_id}_marked.msh"
             mark_scar_command = (
                 f"python3 ./src/mat2msh/markFibroseFromMsh.py "
                 f"--msh {msh_path} "
-                f"--stl_dir {scar_srf} "
+                f"--stl_dir {scar_srf} "          # scarSTL_raw
                 f"--output_path {output_marked}"
             )
             subprocess.run(mark_scar_command, shell=True, check=True)
             print("===================================================")
-            print("Fibrosis successfully marked in the mesh.")
+            print("Fibrosis successfully marked in the mesh (primeira marcação).")
             print("===================================================")
 
         except subprocess.CalledProcessError as e:
-            print(f"Error executing mark_fibrosis_script.py: {e}")
+            print(f"Error executing markFibroseFromMsh.py (primeira marcação): {e}")
             return
-        
 
         print("===================================================")
-        print("Marking fibrosis in the mesh...")
+        print("Gerando PLY separados (core e greyzone) a partir da malha marcada...")
         print("===================================================")
-        msh_path = f"{msh_srf}/{patient_id}_marked.msh"
-        msh_tag_to_ply(msh_path, 2, scar_ply_smooth+f"/{patient_id}_fibrosis.ply")
-        
-        # Converte o PLY da fibrose para STL usando PlyToStl
-        ply_file = scar_ply_smooth + f"/{patient_id}_fibrosis.ply"
-        stl_output = scar_stl_smooth + f"/{patient_id}_fibrosis.stl"
+
+        # 2) Exporta superfícies separadas para tag 2 (core) e tag 3 (greyzone)
+        msh_marked = f"{msh_srf}/{patient_id}_marked.msh"
+        core_ply   = os.path.join(scar_ply_smooth, f"{patient_id}_core_fibrosis.ply")
+        gz_ply     = os.path.join(scar_ply_smooth, f"{patient_id}_greyzone_fibrosis.ply")
+
+        # tag 2 -> core
+        msh_tag_to_ply(msh_marked, tag=2, ply_path=core_ply)
+        # tag 3 -> greyzone
+        msh_tag_to_ply(msh_marked, tag=3, ply_path=gz_ply)
+
+        print("===================================================")
+        print("Convertendo PLY (core / greyzone) para STL suavizados...")
+        print("===================================================")
+
+        # 3) Converte cada PLY para STL com suavização (PlyToStl)
+        core_stl = os.path.join(scar_stl_smooth, f"{patient_id}_core_fibrosis.stl")
+        gz_stl   = os.path.join(scar_stl_smooth, f"{patient_id}_greyzone_fibrosis.stl")
 
         try:
-            convert_command = f"./convertPly2STL/build/bin/PlyToStl {ply_file} {stl_output} 1 1 {args.relaxation} {args.iterations} 2"
-            subprocess.run(convert_command, shell=True, check=True)
-            print(f"STL da fibrose gerado com sucesso: {stl_output}")
+            # core
+            cmd_core = (
+                f"./convertPly2STL/build/bin/PlyToStl {core_ply} {core_stl} "
+                f"1 1 {args.relaxation} {args.iterations} 2"
+            )
+            subprocess.run(cmd_core, shell=True, check=True)
+            print(f"STL suavizado (core) gerado com sucesso: {core_stl}")
         except subprocess.CalledProcessError as e:
-            print(f"Erro ao converter {ply_file} para STL: {e}")
+            print(f"Erro ao converter {core_ply} para STL: {e}")
             return
 
         try:
-            msh_path = f"{msh_srf}/{patient_id}.msh"
-            output_marked = f"{msh_srf}/{patient_id}_marked_smooth.msh"
-            mark_scar_command = (
+            # greyzone
+            cmd_gz = (
+                f"./convertPly2STL/build/bin/PlyToStl {gz_ply} {gz_stl} "
+                f"1 1 {args.relaxation} {args.iterations} 2"
+            )
+            subprocess.run(cmd_gz, shell=True, check=True)
+            print(f"STL suavizado (greyzone) gerado com sucesso: {gz_stl}")
+        except subprocess.CalledProcessError as e:
+            print(f"Erro ao converter {gz_ply} para STL: {e}")
+            return
+
+        print("===================================================")
+        print("Aplicando segunda marcação usando STLs suavizados (core + greyzone)...")
+        print("===================================================")
+
+        # 4) Segunda marcação: usa STLs suavizados para marcar 2 e 3 de novo
+        try:
+            msh_original = f"{msh_srf}/{patient_id}.msh"
+            output_marked_smooth = f"{msh_srf}/{patient_id}_marked_smooth.msh"
+            mark_scar_command_2 = (
                 f"python3 ./src/mat2msh/markFibroseFromMsh.py "
-                f"--msh {msh_path} "
-                f"--stl_dir {scar_stl_smooth} "
-                f"--output_path {output_marked}"
+                f"--msh {msh_original} "
+                f"--stl_dir {scar_stl_smooth} "   # agora com core/greyzone suavizados
+                f"--output_path {output_marked_smooth}"
             )
-            subprocess.run(mark_scar_command, shell=True, check=True)
+            subprocess.run(mark_scar_command_2, shell=True, check=True)
             print("===================================================")
-            print("Fibrosis successfully marked in the mesh.")
+            print("Fibrosis successfully marked in the mesh (segunda marcação, suavizada).")
             print("===================================================")
 
         except subprocess.CalledProcessError as e:
-            print(f"Error executing mark_fibrosis_script.py: {e}")
+            print(f"Error executing markFibroseFromMsh.py (segunda marcação): {e}")
             return
     
     print("===================================================")
@@ -297,7 +330,8 @@ def execute_commands(input_file):
     print("===================================================")
     
     if flagScar:
-        marked_msh_path = output_marked
+        # usa a malha suavizada com core=2, greyzone=3
+        marked_msh_path = f"{msh_srf}/{patient_id}_marked_smooth.msh"
     else:
         marked_msh_path = f"{msh_srf}/{patient_id}.msh"
 

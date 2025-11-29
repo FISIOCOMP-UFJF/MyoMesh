@@ -37,16 +37,10 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
                     aux_beta_endo_sept, aux_beta_epi_sept, aux_alpha_endo_rv, 
                     aux_alpha_epi_rv, aux_beta_endo_rv, aux_beta_epi_rv):
 
-    #mesh reading converted by dolfin-convert
-
+    # mesh reading converted by dolfin-convert
     mesh = df.Mesh(meshname + '.xml')
     materials = df.MeshFunction("size_t", mesh, meshname + '_physical_region.xml')
     ffun = df.MeshFunction("size_t", mesh, meshname + '_facet_region.xml')
-
-    V0 = df.FunctionSpace(mesh, "DG", 0) 
-    tecido = df.Function(V0) 
-    tecido.vector()[:] = materials.array()==2
-    tecido.rename("tecido", "tecido")
 
     ldrb_markers = {
         "base": 10,
@@ -56,7 +50,6 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
     }
 
     # Choose space for the fiber fields
-    # This is a string on the form {family}_{degree}
     fiber_space = "DG_0"
 
     #--------
@@ -99,7 +92,8 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
         beta_endo_rv=aux_beta_endo_rv,  # Sheet angle on the RV endocardium
         beta_epi_rv=aux_beta_epi_rv,
     )
-    #OpenCarp
+
+    # OpenCarp
     if carpOutput:  # flagCarp
         print(50*"=", flush = True)
         print("Converting to CARP...")
@@ -112,7 +106,7 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
             fiber_fn=fiber,
             sheet_fn=sheet,
             normal_fn=sheet_normal,
-            round_dec=8,        # ajuste tolerância se necessário
+            round_dec=8,
         )
         
     fiber.rename("f_0","f_0")
@@ -120,13 +114,12 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
     sheet_normal.rename("n_0","n_0")
     
     print(50*'=')
-    # 1) Espaço de funções
     V_fiber = fiber.function_space()
     mesh_f  = V_fiber.mesh()
     dofmap  = V_fiber.dofmap()
 
     print("=== FunctionSpace do fiber ===")
-    print("  Elemento    :", V_fiber.ufl_element())  # tipo do elemento (DG, Lagrange…)
+    print("  Elemento    :", V_fiber.ufl_element())
     print("  Grau        :", V_fiber.ufl_element().degree())
     print("  Dim. malha  :", mesh_f.topology().dim())
     print("  # vértices  :", mesh_f.num_vertices())
@@ -146,11 +139,57 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
                 cell_mark[cell] = tag
     cell_mark.rename("region_id", "region_id")
 
-    # Convert to DG0 Function
-    V0 = df.FunctionSpace(mesh, "DG", 0) # Scalar field with piecewise constant values
+    # Convert to DG0 Function for region_id
+    V0 = df.FunctionSpace(mesh, "DG", 0)
     region_id = df.Function(V0)
     region_id.vector()[:] = cell_mark.array()
     region_id.rename("region_id", "region_id")
+
+    # =====================================================
+    # NOVO: criar tecido único (0=saudável, 1=core, 2=greyzone)
+    # a partir do .msh marcado em pathMesh
+    # =====================================================
+    print("Lendo tags de fibrose do .msh para criar TECDIO (0 saudavel, 1 core, 2 greyzone)…")
+    gmsh_mesh = meshio.read(pathMesh)
+
+    tetra_index = None
+    for i, c in enumerate(gmsh_mesh.cells):
+        if c.type == "tetra":
+            tetra_index = i
+            break
+    if tetra_index is None:
+        raise RuntimeError("Nenhum elemento 'tetra' no gmsh para fibrose.")
+
+    tetra_cells = gmsh_mesh.cells[tetra_index].data
+    phys_tags   = gmsh_mesh.cell_data["gmsh:physical"][tetra_index]
+
+    n_gmsh_cells   = tetra_cells.shape[0]
+    n_fenics_cells = mesh.num_cells()
+
+    if n_gmsh_cells != n_fenics_cells:
+        print("[WARN] n_gmsh_cells != n_fenics_cells. Assumindo mesma ordem.")
+    else:
+        print(f"  n_cells gmsh = n_cells fenics = {n_gmsh_cells}")
+
+    tecido_fn = df.Function(V0)
+    tecido_arr = tecido_fn.vector().get_local()
+
+    dofmap0 = V0.dofmap()
+    cell_to_dof = [dofmap0.cell_dofs(cell.index())[0] for cell in df.cells(mesh)]
+
+    for cell_idx, dof in enumerate(cell_to_dof):
+        tag = phys_tags[cell_idx]
+        if tag == 2:
+            tecido_arr[dof] = 1.0  # core
+        elif tag == 3:
+            tecido_arr[dof] = 2.0  # greyzone
+        else:
+            tecido_arr[dof] = 0.0  # saudável
+
+    tecido_fn.vector().set_local(tecido_arr)
+    tecido_fn.vector().apply("insert")
+    tecido_fn.rename("tecido", "tecido")
+    # =====================================================
 
     print("Saving…")
     with df.XDMFFile(mesh.mpi_comm(), meshname + ".xdmf") as xdmf:
@@ -163,7 +202,7 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
         xdmf.write(fiber, 0)
         xdmf.write(sheet, 0)
         xdmf.write(sheet_normal, 0)
-        xdmf.write(tecido, 0)
+        xdmf.write(tecido_fn, 0)
         xdmf.write(u, 0)
         xdmf.write(region_id, 0)   # <- gravando região sem erro
 

@@ -164,27 +164,116 @@ def load_gz_map_and_metadata(mat_path):
     return lbl, resolution_x, resolution_y, dz
 
 
-def extract_contours_all_slices(lbl, value, dx=1.0, dy=1.0, invert_y=False):
+def extract_contours_all_slices(
+    lbl,
+    value,
+    dx=1.0,
+    dy=1.0,
+    shifts_x=None,
+    shifts_y=None,
+    invert_y=False,
+):
     """
     lbl: (H, W, S) labels
     value: rótulo alvo (1 = Greyzone, 2 = Core)
     dx, dy: espaçamento mm/pixel
+    shifts_x, shifts_y: arrays de shifts por fatia (em pixels), ou None
     Retorna: lista de tamanho S; cada item é lista de polígonos (N,2) em (x_mm, y_mm)
     """
     H, W, S = lbl.shape
+
+    sx_arr = np.asarray(shifts_x) if shifts_x is not None else None
+    sy_arr = np.asarray(shifts_y) if shifts_y is not None else None
+
     all_slices = []
     for s in range(S):
         mask = (lbl[:, :, s] == value).astype(float)
         cs = find_contours(mask, level=0.5)
         polys = []
+
+        # shifts desta fatia (em pixels)
+        sx = sx_arr[s] if sx_arr is not None and 0 <= s < len(sx_arr) else 0.0
+        sy = sy_arr[s] if sy_arr is not None and 0 <= s < len(sy_arr) else 0.0
+
         for c in cs:
-            y, x = c[:, 0], c[:, 1]
-            X = x * dx
-            Y = (H - 1 - y) * dy if invert_y else y * dy
+            y, x = c[:, 0], c[:, 1]  # coords em pixels
+
+            x_corr = x - sx
+            y_corr = y - sy
+
+            X = x_corr * dx
+            Y = (H - 1 - y_corr) * dy if invert_y else y_corr * dy
+
             polys.append(np.column_stack([X, Y]))
         all_slices.append(polys)
     return all_slices
 
+def align_fibrosis_txts_to_lvendo(output_path, patient_id, rois_dir):
+    """
+    Alinha todos os TXT de fibrose (rois_extruded/roi_*.txt) ao LVEndo,
+    usando apenas coordenadas em mm já exportadas.
+
+    - Lê patientTxt/<patient_id>-LVEndo.txt
+    - Lê todos rois_extruded/roi_*.txt (greyzone + core)
+    - Calcula centróide em XY de cada conjunto
+    - Aplica delta_xy = c_lv - c_fib em TODOS os TXT de fibrose
+    """
+
+    lv_txt = os.path.join(output_path, "patientTxt", f"{patient_id}-LVEndo.txt")
+    if not os.path.exists(lv_txt):
+        print(f"[ALIGN] LVEndo txt '{lv_txt}' não encontrado. Pulando alinhamento XY.")
+        return
+
+    try:
+        lv_pts = np.loadtxt(lv_txt)
+        if lv_pts.ndim == 1:
+            lv_pts = lv_pts[None, :]
+        c_lv = lv_pts[:, :2].mean(axis=0)  # só XY
+    except Exception as e:
+        print(f"[ALIGN] Erro ao ler LVEndo '{lv_txt}': {e}")
+        return
+
+    fib_files = sorted(glob.glob(os.path.join(rois_dir, "roi_*.txt")))
+    if not fib_files:
+        print(f"[ALIGN] Nenhum TXT de fibrose encontrado em '{rois_dir}'.")
+        return
+
+    fib_pts_list = []
+    for fpath in fib_files:
+        try:
+            arr = np.loadtxt(fpath)
+            if arr.ndim == 1:
+                arr = arr[None, :]
+            fib_pts_list.append(arr[:, :2])  # só XY
+        except Exception as e:
+            print(f"[ALIGN] Aviso: não consegui ler '{fpath}': {e}")
+
+    if not fib_pts_list:
+        print("[ALIGN] Não foi possível montar pontos de fibrose para alinhamento.")
+        return
+
+    fib_pts = np.vstack(fib_pts_list)
+    c_fib = fib_pts.mean(axis=0)
+
+    delta_xy = c_lv - c_fib
+    print(f"[ALIGN] Centróide LVEndo XY = {c_lv}")
+    print(f"[ALIGN] Centróide fibrose XY = {c_fib}")
+    print(f"[ALIGN] delta_xy (LVEndo - fibrose) = {delta_xy}")
+
+    # Aplica o delta em todos os arquivos de fibrose
+    for fpath in fib_files:
+        try:
+            arr = np.loadtxt(fpath)
+            if arr.ndim == 1:
+                arr = arr[None, :]
+
+            arr[:, 0] += delta_xy[0]  # X
+            arr[:, 1] += delta_xy[1]  # Y
+
+            np.savetxt(fpath, arr, fmt="%.6f")
+            print(f"[ALIGN] delta_xy aplicado em '{fpath}'")
+        except Exception as e:
+            print(f"[ALIGN] Erro ao aplicar delta_xy em '{fpath}': {e}")
 
 def save_region_extruded_txts(polys_per_slice, dz, out_dir, region_name,
                               num_layers=1, z_offset=0.0):
@@ -296,7 +385,9 @@ def msh_tag_to_ply(msh_path, tag=2, ply_path="fibrose_surface.ply"):
     extrai os elementos com a tag especificada e
     salva a superfície correspondente em um .ply ASCII.
     """
-    msh_path, ply_path = Path(msh_path), Path(ply_path)
+    msh_path = Path(msh_path)
+    ply_path = Path(ply_path)
+
     msh = meshio.read(msh_path)
 
     all_t, all_tags = [], []
@@ -304,12 +395,13 @@ def msh_tag_to_ply(msh_path, tag=2, ply_path="fibrose_surface.ply"):
         if cb.type == "tetra":
             all_t.append(cb.data)
             all_tags.append(msh.cell_data["gmsh:physical"][i])
+
     if not all_t:
         raise ValueError("Sem tetraedros no .msh.")
 
     tets = np.vstack(all_t)
     tags = np.concatenate(all_tags)
-    mask = tags == tag
+    mask = (tags == tag)
     if not np.any(mask):
         warnings.warn(f"Nenhum tetra com tag {tag}.")
         return None
@@ -335,7 +427,6 @@ def msh_tag_to_ply(msh_path, tag=2, ply_path="fibrose_surface.ply"):
     print(f"[PLY] salvo (ASCII): {ply_path}")
     return surf
 
-
 # ============================================================
 # MAIN com --mode roi / --mode greyzone
 # ============================================================
@@ -346,9 +437,9 @@ def main():
     )
     parser.add_argument("matfile", help="Caminho para o .mat alinhado (saída do readMat)")
     parser.add_argument("--shiftx", default=None,
-                        help="Caminho para endo_shifts_x.txt (usado em modo roi)")
+                        help="Caminho para endo_shifts_x.txt (usado em modo roi/greyzone)")
     parser.add_argument("--shifty", default=None,
-                        help="Caminho para endo_shifts_y.txt (usado em modo roi)")
+                        help="Caminho para endo_shifts_y.txt (usado em modo roi/greyzone)")
     parser.add_argument("--output_path", required=True,
                         help="Pasta base do paciente (a mesma usada no execAll.py)")
     parser.add_argument("--patient_id", required=True,
@@ -396,11 +487,36 @@ def main():
         print(f"Dimensões do mapa: {lbl.shape} (H, W, S)")
         print(f"ResolutionX={res_x} mm/pixel, ResolutionY={res_y} mm/pixel, dz={dz} mm")
 
-        gz_slices   = extract_contours_all_slices(lbl, value=1, dx=res_x, dy=res_y, invert_y=False)
-        core_slices = extract_contours_all_slices(lbl, value=2, dx=res_x, dy=res_y, invert_y=False)
+        # Carrega shifts de respiração (em pixels), se existirem
+        shifts_x = np.loadtxt(args.shiftx) if args.shiftx is not None else None
+        shifts_y = np.loadtxt(args.shifty) if args.shifty is not None else None
 
+        # Extrai contornos em coordenadas físicas (mm), já corrigindo os shifts
+        gz_slices = extract_contours_all_slices(
+            lbl, value=1,
+            dx=res_x, dy=res_y,
+            shifts_x=shifts_x, shifts_y=shifts_y,
+            invert_y=False
+        )
+        core_slices = extract_contours_all_slices(
+            lbl, value=2,
+            dx=res_x, dy=res_y,
+            shifts_x=shifts_x, shifts_y=shifts_y,
+            invert_y=False
+        )
+
+        # Offset em Z (mesma lógica antiga, agora com XY corrigido)
         z_offset = 1.0 * dz
-        print(f"[GZ] Usando z_offset fixo = {z_offset} (mesmas unidades de dz do Segment).")
+        print(f"[GZ] Usando z_offset = {z_offset} com correção de shifts por fatia.")
+
+        _ = save_region_extruded_txts(
+            gz_slices, dz, rois_dir, region_name="greyzone",
+            num_layers=1, z_offset=z_offset
+        )
+        _ = save_region_extruded_txts(
+            core_slices, dz, rois_dir, region_name="core",
+            num_layers=1, z_offset=z_offset
+        )
 
         _ = save_region_extruded_txts(
             gz_slices,   dz, rois_dir, region_name="greyzone",
@@ -411,7 +527,11 @@ def main():
             num_layers=1, z_offset=z_offset
         )
 
+        # Novo passo: alinhar XY da fibrose ao LVEndo
+        align_fibrosis_txts_to_lvendo(args.output_path, args.patient_id, rois_dir)
+
         generate_surfaces_and_stl(args.patient_id, rois_dir, ply_dir, stl_dir)
+
 
     print("===================================================")
     print("Fim do readScar.py.")
