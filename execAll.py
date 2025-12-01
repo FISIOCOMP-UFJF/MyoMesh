@@ -388,15 +388,15 @@ if __name__ == "__main__":
     parser.add_argument("-i", "--input_file", required=True, help="Full path to the input .mat file")
     parser.add_argument('-r', '--resolution', type=int, default=1000, help='Discretization resolution for the mesh')
 
-    parser.add_argument('-dx', type=float, default=0.5, help='dx')
-    parser.add_argument('-dy', type=float, default=0.5, help='dy')
-    parser.add_argument('-dz', type=float, default=0.5, help='dz')
+    parser.add_argument('-dx', type=float, default=0.25, help='dx')
+    parser.add_argument('-dy', type=float, default=0.25, help='dy')
+    parser.add_argument('-dz', type=float, default=0.25, help='dz')
 
     parser.add_argument('--relaxation', type=float, default=0.05, help='Relaxation factor for mesh smoothing')
     parser.add_argument('--iterations', type=int, default=200, help='Number of iterations for mesh smoothing')
 
-    parser.add_argument('--alpha_endo_lv', type=float, default=30, help='Fiber angle on the LV endocardium')
-    parser.add_argument('--alpha_epi_lv', type=float, default=-30, help='Fiber angle on the LV epicardium')
+    parser.add_argument('--alpha_endo_lv', type=float, default=60, help='Fiber angle on the LV endocardium')
+    parser.add_argument('--alpha_epi_lv', type=float, default=-60, help='Fiber angle on the LV epicardium')
     parser.add_argument('--beta_endo_lv', type=float, default=0, help='Sheet angle on the LV endocardium')
     parser.add_argument('--beta_epi_lv', type=float, default=0, help='Sheet angle on the LV epicardium')
 
@@ -405,8 +405,8 @@ if __name__ == "__main__":
     parser.add_argument('--beta_endo_sept', type=float, default=0, help='Sheet angle on the Septum endocardium')
     parser.add_argument('--beta_epi_sept', type=float, default=0, help='Sheet angle on the Septum epicardium')
 
-    parser.add_argument('--alpha_endo_rv', type=float, default=80, help='Fiber angle on the RV endocardium')
-    parser.add_argument('--alpha_epi_rv', type=float, default=-80, help='Fiber angle on the RV epicardium')
+    parser.add_argument('--alpha_endo_rv', type=float, default=60, help='Fiber angle on the RV endocardium')
+    parser.add_argument('--alpha_epi_rv', type=float, default=-60, help='Fiber angle on the RV epicardium')
     parser.add_argument('--beta_endo_rv', type=float, default=0, help='Sheet angle on the RV endocardium')
     parser.add_argument('--beta_epi_rv', type=float, default=0, help='Sheet angle on the RV epicardium')
     args = parser.parse_args()
