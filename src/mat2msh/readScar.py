@@ -68,8 +68,11 @@ def save_fatias_to_txt(fatias, shifts_x_file, shifts_y_file, output_dir):
     shifts_y = np.loadtxt(shifts_y_file)
 
     for z, roi_map in sorted(fatias.items()):
-        sx = shifts_x[z] if 0 <= z < len(shifts_x) else 0
-        sy = shifts_y[z] if 0 <= z < len(shifts_y) else 0
+        # Se z for 1-based (Matlab), o índice do array é z-1
+        idx_shift = z - 1
+        sx = shifts_x[idx_shift] if 0 <= idx_shift < len(shifts_x) else 0
+        sy = shifts_y[idx_shift] if 0 <= idx_shift < len(shifts_y) else 0
+        
         fname = os.path.join(output_dir, f"slice_{z}.txt")
         with open(fname, 'w') as f:
             for pts in roi_map.values():
@@ -178,12 +181,28 @@ def extract_contours_all_slices(
         cs = find_contours(mask, level=0.5)
         polys = []
 
-        sx = sx_arr[s] if sx_arr is not None and 0 <= s < len(sx_arr) else 0.0
-        sy = sy_arr[s] if sy_arr is not None and 0 <= s < len(sy_arr) else 0.0
-
+        #sx = sx_arr[s] if sx_arr is not None and 0 <= s < len(sx_arr) else 0.0
+        #sy = sy_arr[s] if sy_arr is not None and 0 <= s < len(sy_arr) else 0.0
+        sx = 0
+        sy = 0
+        
         for c in cs:
-            y, x = c[:, 0], c[:, 1]
+            # ============================================================
+            # 1. LEITURA ORIGINAL (Mantém a orientação cardíaca correta)
+            # ============================================================
+            # Mantemos y=c[:,0] e x=c[:,1] como no seu código original.
+            # Isso garante que a geometria não fique espelhada.
+            y_raw, x_raw = c[:, 0], c[:, 1]
 
+            # ============================================================
+            # 2. AJUSTE FINO (+1.0)
+            # ============================================================
+            # Adicionamos 2.0 para compensar a diferença de grid (0-based vs 1-based)
+            # sem alterar a lógica de eixos.
+            y = y_raw + 2
+            x = x_raw + 0
+
+            # ============================================================
             x_corr = x - sx
             y_corr = y - sy
 
