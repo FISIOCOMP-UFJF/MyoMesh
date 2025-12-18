@@ -110,7 +110,7 @@ def save_rois_extruded_to_txt(fatias, mat_filename, output_dir, num_layers=1):
 
 
 # ============================================================
-# GreyZone.map → GZ/Core
+# GreyZone.map -> GZ/Core
 # ============================================================
 
 def load_gz_map_and_metadata(mat_path):
@@ -137,7 +137,7 @@ def load_gz_map_and_metadata(mat_path):
         raise ValueError(f"Esperava (H, W, S) para GreyZone.map, obtive ndim={lbl.ndim}")
 
     # =========================================================
-    # [CORREÇÃO GEOMÉTRICA] Transpose (Troca X <-> Y)
+    # Transpose (Troca X <-> Y)
     # =========================================================
     print("[INFO] Aplicando Transpose na matriz GreyZone (Correção Geométrica)")
     lbl = np.transpose(lbl, (1, 0, 2))
@@ -181,28 +181,23 @@ def extract_contours_all_slices(
         cs = find_contours(mask, level=0.5)
         polys = []
 
-        #sx = sx_arr[s] if sx_arr is not None and 0 <= s < len(sx_arr) else 0.0
-        #sy = sy_arr[s] if sy_arr is not None and 0 <= s < len(sy_arr) else 0.0
-        sx = 0
-        sy = 0
+        sx = sx_arr[s] if sx_arr is not None and 0 <= s < len(sx_arr) else 0.0
+        sy = sy_arr[s] if sy_arr is not None and 0 <= s < len(sy_arr) else 0.0
+        #sx = 0
+        #sy = 0
         
         for c in cs:
-            # ============================================================
-            # 1. LEITURA ORIGINAL (Mantém a orientação cardíaca correta)
-            # ============================================================
-            # Mantemos y=c[:,0] e x=c[:,1] como no seu código original.
+            # Mantem y=c[:,0] e x=c[:,1]
             # Isso garante que a geometria não fique espelhada.
             y_raw, x_raw = c[:, 0], c[:, 1]
 
             # ============================================================
-            # 2. AJUSTE FINO (+1.0)
+            # Ajuste
             # ============================================================
-            # Adicionamos 2.0 para compensar a diferença de grid (0-based vs 1-based)
-            # sem alterar a lógica de eixos.
-            y = y_raw + 2
-            x = x_raw + 0
-
+            y = y_raw + 1
+            x = x_raw + 1
             # ============================================================
+            
             x_corr = x - sx
             y_corr = y - sy
 
@@ -353,7 +348,7 @@ def generate_surfaces_and_stl(patient_id, rois_dir, ply_dir, stl_dir):
 
 
 # ============================================================
-# msh_tag_to_ply (RESTORED)
+# msh_tag_to_ply
 # ============================================================
 
 def msh_tag_to_ply(msh_path, tag=2, ply_path="fibrose_surface.ply"):
@@ -404,11 +399,6 @@ def msh_tag_to_ply(msh_path, tag=2, ply_path="fibrose_surface.ply"):
     print(f"[PLY] salvo (ASCII): {ply_path}")
     return surf
 
-
-# ============================================================
-# MAIN
-# ============================================================
-
 def main():
     parser = argparse.ArgumentParser(
         description="Extrai cicatriz a partir do .mat (ROI ou GreyZone) e gera STL para marcar fibrose."
@@ -456,7 +446,6 @@ def main():
         print("Modo GREYZONE (Scar/GreyZone.map → GZ + Core)")
         print("===================================================")
 
-        # 1. Carrega (COM TRANSPOSE)
         lbl, res_x, res_y, dz = load_gz_map_and_metadata(args.matfile)
         print(f"Dimensões do mapa: {lbl.shape} (H, W, S)")
         print(f"ResolutionX={res_x} mm/pixel, ResolutionY={res_y} mm/pixel, dz={dz} mm")
@@ -482,10 +471,6 @@ def main():
 
         _ = save_region_extruded_txts(gz_slices, dz, rois_dir, "greyzone", 1, z_offset)
         _ = save_region_extruded_txts(core_slices, dz, rois_dir, "core", 1, z_offset)
-
-        # 2. Desativa Alinhamento (No-Align)
-        # align_fibrosis_txts_to_lvendo(args.output_path, args.patient_id, rois_dir)
-        print("[INFO] Alinhamento automático via centróide DESATIVADO (mantendo geometria física).")
 
         generate_surfaces_and_stl(args.patient_id, rois_dir, ply_dir, stl_dir)
 
