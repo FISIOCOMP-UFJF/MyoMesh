@@ -115,3 +115,7 @@ python3 execAll.py -i ./Patient_1.mat -dx 0.5 -dy 0.5 -dz 0.5 -r 1000 --iteratio
 - No additional system packages are required if you install via the provided Conda environment.
 - Gmsh binary is already included and used by the pipeline.
 - The `hexa-mesh-from-VTK` project will be cloned and compiled automatically during `config.sh`.
+
+## How to cite
+
+Namorato FL, Leme DMP, Soares TJ, Oliveira RS, Schmal TR, dos Santos RW, Campos JO. Development of a Three-Dimensional Computational Pipeline in Python for Personalized Heart Modeling. *Computing in Cardiology (CinC)*. 2025;52:1–4. https://doi.org/10.22489/CinC.2025.329
