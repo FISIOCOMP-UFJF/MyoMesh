@@ -6,6 +6,7 @@ from src.mat2msh.readScar import msh_tag_to_ply
 import argparse
 import shutil
 from scipy.io import loadmat
+from src.msh2alg.generate_fiber_3D_biv import *
 
 def execute_commands(input_file):
    
@@ -32,7 +33,11 @@ def execute_commands(input_file):
     mesh_output_base = f"{output_dir}/fenicsFiles/{patient_id}"
     carp_output = f"{output_dir}/carpFiles/{patient_id}"
     alg_output = f"{output_dir}/algFiles/{patient_id}"
+    log_dir = os.path.join(output_dir, "logs")
     
+    if os.path.exists(log_dir):
+        shutil.rmtree(log_dir)
+    os.makedirs(log_dir, exist_ok=True)
 
     if os.path.exists(scar_ply_smooth):
         shutil.rmtree(scar_ply_smooth)
@@ -163,6 +168,7 @@ def execute_commands(input_file):
     lv_endo = f"{stl_srf}/{patient_id}-LVEndo.stl"
     rv_endo = f"{stl_srf}/{patient_id}-RVEndo.stl"
     rv_epi = f"{stl_srf}/{patient_id}-RVEpi.stl"
+    lv_epi = f"{stl_srf}/{patient_id}-LVEpi.stl"
 
     msh_heart = f"{msh_srf}/{patient_id}_model.msh"
     msh = f"{msh_srf}/{patient_id}.msh"
@@ -222,6 +228,12 @@ def execute_commands(input_file):
     print("===================================================")
     print("Generating the mesh with GMSH...")
     print("===================================================")
+
+
+    #==================================================
+    #PROCESSO MARCACAO DAS FIBROSES NO LV
+    #==================================================
+
     # Command with os.system
     try:
         os.system('{} -3 {} -merge {} {} {} -o {} 2>&1 {}'.format(
@@ -232,99 +244,83 @@ def execute_commands(input_file):
         return
     
     if flagScar:
-        print("")
         print("===================================================")
-        print("Processing scar files (primeira marcação)...")
+        print("Generating LV-only mesh with GMSH...")
         print("===================================================")
 
-        # 1) Primeira marcação usando STLs crus (scarSTL_raw)
-        try:
-            msh_path = f"{msh_srf}/{patient_id}.msh"
-            output_marked = f"{msh_srf}/{patient_id}_marked.msh"
-            mark_scar_command = (
-                f"python3 ./src/mat2msh/markFibroseFromMsh.py "
-                f"--msh {msh_path} "
-                f"--stl_dir {scar_srf} "          # scarSTL_raw
-                f"--output_path {output_marked}"
-            )
-            subprocess.run(mark_scar_command, shell=True, check=True)
-            print("===================================================")
-            print("Fibrosis successfully marked in the mesh (primeira marcação).")
-            print("===================================================")
+        lv_endo = f"{stl_srf}/{patient_id}-LVEndo.stl"
+        lv_epi  = f"{stl_srf}/{patient_id}-LVEpi.stl"
 
-        except subprocess.CalledProcessError as e:
-            print(f"Error executing markFibroseFromMsh.py (primeira marcação): {e}")
+        lv_geo = "./scripts/lv_mesh.geo"
+        msh_teste = f"{msh_srf}/{patient_id}_lv.msh"
+        out_log_lv = f"{msh_srf}/{patient_id}_lv.log"
+        cmd = '{} -3 {} -merge {} {} -o {} > {} 2>&1'.format(
+            gmsh, lv_endo, lv_epi, lv_geo, msh_teste, out_log_lv
+        )
+
+        ret = os.system(cmd)
+
+        if not os.path.exists(msh_teste):
+            print(f"[FATAL] LV-only mesh not generated.")
+            print(f"        Command exit code: {ret}")
+            print(f"        Log file: {out_log_lv}")
             return
+        else:
+            if ret != 0:
+                print(f"[WARN] Gmsh returned non-zero code ({ret}) but mesh exists.")
+                print(f"       Proceeding with LV-only mesh.")
 
-        print("===================================================")
-        print("Gerando PLY separados (core e greyzone) a partir da malha marcada...")
-        print("===================================================")
+        print(f"[OK] LV-only generated: {msh_teste}")
+        print(f"      Log: {out_log_lv}")
 
-        # 2) Exporta superfícies separadas para tag 2 (core) e tag 3 (greyzone)
-        msh_marked = f"{msh_srf}/{patient_id}_marked.msh"
-        core_ply   = os.path.join(scar_ply_smooth, f"{patient_id}_core_fibrosis.ply")
-        gz_ply     = os.path.join(scar_ply_smooth, f"{patient_id}_greyzone_fibrosis.ply")
+        msh_lv = msh_teste
+        lv_marked = f"{msh_srf}/{patient_id}_lv_marked.msh"
 
-        # tag 2 -> core
-        msh_tag_to_ply(msh_marked, tag=2, ply_path=core_ply)
-        # tag 3 -> greyzone
-        msh_tag_to_ply(msh_marked, tag=3, ply_path=gz_ply)
+        mark_scar_lv_cmd = (
+            f"python3 ./src/mat2msh/markFibroseFromMsh.py "
+            f"--msh {msh_lv} "
+            f"--stl_dir {scar_srf} "
+            f"--output_path {lv_marked}"
+        )
+        subprocess.run(mark_scar_lv_cmd, shell=True, check=True)
+        print(f"[OK] Fibrose marcada na LV-only: {lv_marked}")
 
-        print("===================================================")
-        print("Convertendo PLY (core / greyzone) para STL suavizados...")
-        print("===================================================")
+        core_ply = os.path.join(scar_ply_smooth, f"{patient_id}_core_from_lv.ply")
+        gz_ply   = os.path.join(scar_ply_smooth, f"{patient_id}_gz_from_lv.ply")
 
-        # 3) Converte cada PLY para STL com suavização (PlyToStl)
-        core_stl = os.path.join(scar_stl_smooth, f"{patient_id}_core_fibrosis.stl")
-        gz_stl   = os.path.join(scar_stl_smooth, f"{patient_id}_greyzone_fibrosis.stl")
+        msh_tag_to_ply(lv_marked, tag=2, ply_path=core_ply)
+        msh_tag_to_ply(lv_marked, tag=3, ply_path=gz_ply)
 
-        try:
-            # core
-            cmd_core = (
-                f"./convertPly2STL/build/bin/PlyToStl {core_ply} {core_stl} "
-                f"1 1 {args.relaxation} {args.iterations} 2"
-            )
-            subprocess.run(cmd_core, shell=True, check=True)
-            print(f"STL suavizado (core) gerado com sucesso: {core_stl}")
-        except subprocess.CalledProcessError as e:
-            print(f"Erro ao converter {core_ply} para STL: {e}")
-            return
 
-        try:
-            # greyzone
-            cmd_gz = (
-                f"./convertPly2STL/build/bin/PlyToStl {gz_ply} {gz_stl} "
-                f"1 1 {args.relaxation} {args.iterations} 2"
-            )
-            subprocess.run(cmd_gz, shell=True, check=True)
-            print(f"STL suavizado (greyzone) gerado com sucesso: {gz_stl}")
-        except subprocess.CalledProcessError as e:
-            print(f"Erro ao converter {gz_ply} para STL: {e}")
-            return
+        core_stl = os.path.join(scar_stl_smooth, f"{patient_id}_core_smooth.stl")
+        gz_stl   = os.path.join(scar_stl_smooth, f"{patient_id}_gz_smooth.stl")
 
-        print("===================================================")
-        print("Aplicando segunda marcação usando STLs suavizados (core + greyzone)...")
-        print("===================================================")
+        print("Rodando")
+        subprocess.run(
+            f"./convertPly2STL/build/bin/PlyToStl {core_ply} {core_stl} 1 1 {args.relaxation} {args.iterations} 2",
+            shell=True, check=True
+        )
+        subprocess.run(
+            f"./convertPly2STL/build/bin/PlyToStl {gz_ply} {gz_stl} 1 1 {args.relaxation} {args.iterations} 2",
+            shell=True, check=True
+        )
 
-        # 4) Segunda marcação: usa STLs suavizados para marcar 2 e 3 de novo
-        try:
-            msh_original = f"{msh_srf}/{patient_id}.msh"
-            output_marked_smooth = f"{msh_srf}/{patient_id}_marked_smooth.msh"
-            mark_scar_command_2 = (
-                f"python3 ./src/mat2msh/markFibroseFromMsh.py "
-                f"--msh {msh_original} "
-                f"--stl_dir {scar_stl_smooth} "   # agora com core/greyzone suavizados
-                f"--output_path {output_marked_smooth}"
-            )
-            subprocess.run(mark_scar_command_2, shell=True, check=True)
-            print("===================================================")
-            print("Fibrosis successfully marked in the mesh (segunda marcação, suavizada).")
-            print("===================================================")
 
-        except subprocess.CalledProcessError as e:
-            print(f"Error executing markFibroseFromMsh.py (segunda marcação): {e}")
-            return
-    
+        healthy_msh = f"{msh_srf}/{patient_id}.msh"
+        healthy_marked_smooth = f"{msh_srf}/{patient_id}_marked_smooth.msh"
+
+        cmd2 = (
+            f"python3 ./src/mat2msh/markFibroseFromMsh.py "
+            f"--msh {healthy_msh} "
+            f"--stl_dir {scar_stl_smooth} "
+            f"--output_path {healthy_marked_smooth}"
+        )
+        subprocess.run(cmd2, shell=True, check=True)
+        print(f"[OK] Saudável remarcado: {healthy_marked_smooth}")
+    mirror_msh_x(msh_teste, f"{msh_srf}/{patient_id}_mirX_lv.msh", about="centroid")
+
+    exit(0)
+    #==================================================
     print("===================================================")
     print("Converting msh to alg format...")
     print("===================================================")
