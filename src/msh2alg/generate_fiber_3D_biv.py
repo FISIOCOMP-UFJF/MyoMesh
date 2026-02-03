@@ -1,7 +1,7 @@
 import dolfin as df
 import ldrb
 import meshio
-from msh2carp import gmsh2carp
+from .msh2carp import gmsh2carp
 
 
 def solve_laplace(mesh, boundary_markers, boundary_values, ldrb_markers):
