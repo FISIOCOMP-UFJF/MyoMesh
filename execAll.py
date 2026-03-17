@@ -319,7 +319,6 @@ def execute_commands(input_file):
         print(f"[OK] Saudável remarcado: {healthy_marked_smooth}")
     mirror_msh_x(msh_teste, f"{msh_srf}/{patient_id}_mirX_lv.msh", about="centroid")
 
-    exit(0)
     #==================================================
     print("===================================================")
     print("Converting msh to alg format...")

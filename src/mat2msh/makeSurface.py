@@ -52,6 +52,77 @@ def writeplyfile(writefile, tet_nodes, tet_tot):
     FILE.close()
     return
 
+
+def align_contour_phase(ring_ref, ring_next):
+    """
+    Encontra o melhor ponto de início para ring_next que minimiza
+    a distância total para ring_ref.
+    
+    Ambos os anéis devem ter o mesmo número de pontos (já reamostrados).
+    Retorna ring_next reordenado.
+    """
+    n = len(ring_ref)
+    best_shift = 0
+    best_cost = np.inf
+
+    ref_xy = ring_ref[:, :2]  # usa só X e Y para comparar (ignora Z)
+
+    for shift in range(n):
+        rolled = np.roll(ring_next[:, :2], shift, axis=0)
+        cost = np.sum(np.linalg.norm(ref_xy - rolled, axis=1))
+        if cost < best_cost:
+            best_cost = cost
+            best_shift = shift
+
+    return np.roll(ring_next, best_shift, axis=0)
+
+
+def resample_ring(ring, n):
+    """
+    Reamostrar um anel de pontos para ter exatamente n pontos,
+    usando interpolação linear ao longo do perímetro.
+    """
+    # Fecha o anel para interpolação
+    closed = np.vstack([ring, ring[0]])
+    
+    # Calcula distâncias acumuladas
+    diffs = np.diff(closed, axis=0)
+    dists = np.sqrt((diffs**2).sum(axis=1))
+    cum_dist = np.concatenate([[0], np.cumsum(dists)])
+    total = cum_dist[-1]
+    
+    if total == 0:
+        return np.tile(ring[0], (n, 1))
+    
+    # Pontos uniformemente espaçados
+    t_new = np.linspace(0, total, n, endpoint=False)
+    
+    resampled = np.zeros((n, ring.shape[1]))
+    for col in range(ring.shape[1]):
+        resampled[:, col] = np.interp(t_new, cum_dist, closed[:, col])
+    
+    return resampled
+
+
+def align_all_slices(points, n_per_slice, n_slices):
+    """
+    Alinha a fase de todos os anéis em relação ao anel anterior,
+    minimizando a distância total entre pontos correspondentes.
+    
+    Retorna o array de pontos com os anéis reordenados.
+    """
+    aligned = points.copy()
+    
+    for s in range(1, n_slices):
+        ring_ref  = aligned[(s-1)*n_per_slice : s*n_per_slice, :]
+        ring_next = aligned[s*n_per_slice     : (s+1)*n_per_slice, :]
+        
+        ring_next_aligned = align_contour_phase(ring_ref, ring_next)
+        aligned[s*n_per_slice:(s+1)*n_per_slice, :] = ring_next_aligned
+    
+    return aligned
+
+
 def make_triangle_connection(patch):
     """
     Creates the triangle connectivity between consecutive rings (slices).
@@ -123,73 +194,41 @@ def triangulate_flat_cap(points_2d, node_offset=0):
     """
     Creates a 2D Delaunay triangulation from points on a plane (X, Y)
     and filters the triangles to respect the polygon boundary.
-    This is crucial for non-convex contours, such as fibroses,
-    where pure Delaunay triangulation might create "invalid" triangles
-    that cross through the shape's interior.
-
-    Returns:
-    - numpy.ndarray: A (M, 3) array of valid triangle indices.
-                     Returns an empty array if there are no valid triangles.
     """
     if points_2d.shape[0] < 3:
         return np.empty((0, 3), dtype=int)
 
-    # Realiza a triangulação Delaunay em 2D
     tri = Delaunay(points_2d)
-    
-    # Since Delaunay creates the initial outline of the structure,
-    # Path acts as a "boundary detector" to check if the triangles
-    # lie inside the polygon defined by points_2d.
-    # This is important to avoid triangles extending beyond the contour.
-    # The last point must be the same as the first to close the contour
     polygon_path = Path(points_2d)
 
     valid_triangles = []
     for simplex in tri.simplices:
-        # Get the triangle vertices
         triangle_vertices = points_2d[simplex]
-        
-        # Compute the centroid of the triangle
         triangle_centroid = np.mean(triangle_vertices, axis=0)
-        
-        # Check if the triangle's centroid is inside the original polygon
         if polygon_path.contains_point(triangle_centroid):
             valid_triangles.append(simplex)
             
     if not valid_triangles:
         return np.empty((0, 3), dtype=int)
 
-    # Add the offset to the indices of valid triangles
     return np.array(valid_triangles) + node_offset
 
 def cover_both_ends_with_caps(nodes, tris, patch, principal_axis=2):
     """
-    Closes both ends by triangulating the caps radially from
-    the slice contours using 2D Delaunay.
-
-    - `nodes`: (Mx3) array of the original nodes
-    - `tris`: (Kx3) slice connectivity (lateral mesh)
-    - patch["width"]: number of points per slice
-    - patch["height"]: number of slices
-
-    Returns (nodes_final, tris_final)
+    Closes both ends by triangulating the caps using 2D Delaunay.
     """
-
     n_in_strip = patch["width"]
     n_slices   = patch["height"]
-    # Compute global indices of the two edges
+
     base_idx = np.arange(0, n_in_strip)
     top_idx  = np.arange((n_slices-1)*n_in_strip, n_slices*n_in_strip)
 
-    # Extract 2D coordinates for the caps
-    pts_base_2d = nodes[base_idx, :2]  # Take only X and Y from the base
-    pts_top_2d  = nodes[top_idx, :2]   # Take only X and Y from the top
+    pts_base_2d = nodes[base_idx, :2]
+    pts_top_2d  = nodes[top_idx, :2]
 
-    # Create triangles for the caps
     base_cap_tris = triangulate_flat_cap(pts_base_2d, node_offset=base_idx[0])
     top_cap_tris  = triangulate_flat_cap(pts_top_2d, node_offset=top_idx[0])
 
-    # Concatenate: lower cap triangles + lateral triangles + upper cap triangles
     all_tris = [tris]
     if base_cap_tris.size > 0:
         all_tris.append(base_cap_tris)
@@ -202,27 +241,12 @@ def cover_both_ends_with_caps(nodes, tris, patch, principal_axis=2):
 
 def replicate_single_slice_below(points, slice_thickness, principal_axis=2):
     """
-    If there is only one slice (a single ring of points),
-    replicate it "below" by 'slice_thickness' along 'principal_axis'.
-    
-    Returns:
-      new_points: shape (2*N, 3), with:
-          - the lower ring (original ring shifted downward)
-          - the original ring at the original coords
-      patch: {"height": 2, "width": N}
+    If there is only one slice, replicate it shifted by slice_thickness.
     """
     N = points.shape[0]
-    
-    # Create a copy of the ring, shifting by -slice_thickness
     ring_lower = points.copy()
-    
-    # If the sign is inverted, reverse the extrusion direction
     ring_lower[:, principal_axis] += slice_thickness 
-    
-    # Stack them: lower ring first, then the original ring
     new_points = np.vstack([ring_lower, points])
-    
-    # Now we have 2 slices, each with N points
     patch = {"height": 2, "width": N}
     return new_points, patch
 
@@ -266,26 +290,23 @@ if __name__ == "__main__":
     print(f"Reading points from {filename_input}")
     points0 = np.loadtxt(filename_input)
 
-    # Optionally invert Z
     if invert_z and len(points0) > 0:
         points0[:, 2] = -points0[:, 2]
 
-    # Optionally invert X
     if invert_x and len(points0) > 0:
         points0[:, 0] = -points0[:, 0]
 
-    # Optionally invert Y
     if intert_y and len(points0) > 0:
         points0[:, 1] = -points0[:, 1]
         
-    # Optionally reverse the point order
     if user_input["reshuffle_point_order"]:
         points = points0[::-1, :]
     else:
         points = points0
 
     principal_axis = user_input["principal_axis"]
-    # Attempt to discover how many slices
+
+    # Descobrir n_per_slice e n_slices
     slice_position_test = points[0, principal_axis]
     n_per_slice = np.sum(points[:, principal_axis] == slice_position_test)
     n_slices = int(len(points) / n_per_slice)
@@ -294,7 +315,7 @@ if __name__ == "__main__":
         print("Error: Inconsistent number of points per slice.")
         sys.exit(1)
 
-    # If there's only one slice, replicate it below
+    # Se só uma fatia, replica abaixo
     if n_slices == 1:
         print("Detected a single slice. Replicating below using 'slice_thickness'...")
         new_points, patch = replicate_single_slice_below(
@@ -306,14 +327,17 @@ if __name__ == "__main__":
         n_slices = patch["height"]
         n_per_slice = patch["width"]
     else:
-        # If there's more than one slice, build patch normally
         patch = {"height": n_slices, "width": n_per_slice}
 
-    # Create triangle surface
-    tris = make_triangle_connection(patch)
+    # -------------------------------------------------------
+    # ALINHAMENTO DE FASE ENTRE FATIAS (correção principal)
+    # -------------------------------------------------------
+    print(f"Aligning contour phases across {n_slices} slices...")
+    points = align_all_slices(points, n_per_slice, n_slices)
+    print("Phase alignment done.")
 
-    apex_first = None
-    apex_last = None
+    # Cria conectividade triangular
+    tris = make_triangle_connection(patch)
 
     if cover_both:
         nodes_final, tris_final = cover_both_ends_with_caps(points, tris, patch, principal_axis=principal_axis)
@@ -323,7 +347,7 @@ if __name__ == "__main__":
         nodes_final = points
         tris_final = tris
 
-    # Calculate normals and remove degenerate triangles
+    # Remove triângulos degenerados
     normals = calculate_normals(nodes_final, tris_final.astype(int))
     err_tol = 1e-6
 
@@ -340,7 +364,6 @@ if __name__ == "__main__":
     good_tris = np.where(np.abs(np.sqrt((normals ** 2).sum(-1))) > err_tol)[0]
     tris_final = tris_final[good_tris, :]
 
-    # Fix node indices if necessary
     tris_final_temp = tris_final.flatten()
     for i in range(tris_final.size):
         node_i = tris_final_temp[i]
@@ -350,12 +373,11 @@ if __name__ == "__main__":
                 tris_final_temp[i] = new_indices[indice_i]
     tris_final = tris_final_temp.reshape(tris_final.shape)
 
-    # Write .ply file
+    # Salva .ply
     if user_input["print_ply"]:
         print(f"Saving .ply file to {filename_output}")
         writeplyfile(filename_output, nodes_final, tris_final + 1)
 
-    # Optional plot
     if user_input["plot"]:
         fig = plt.figure()
         ax = fig.add_subplot(111, projection="3d")

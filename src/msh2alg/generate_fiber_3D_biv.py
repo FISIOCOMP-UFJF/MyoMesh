@@ -31,7 +31,49 @@ def solve_laplace(mesh, boundary_markers, boundary_values, ldrb_markers):
 
     return u
 
+def solve_laplace_grayzone(mesh, tecido_fn):
 
+    V  = df.FunctionSpace(mesh, "P",  1)
+    V0 = df.FunctionSpace(mesh, "DG", 0)
+
+    facet_mark  = df.MeshFunction("size_t", mesh, mesh.topology().dim() - 1, 0)
+
+    tecido_vals = tecido_fn.vector().get_local()
+
+    dofmap0     = V0.dofmap()
+    cell_to_dof = [dofmap0.cell_dofs(c.index())[0] for c in df.cells(mesh)]
+
+    for facet in df.facets(mesh):
+
+        cells = [c for c in df.cells(facet)]
+
+        if len(cells) == 2:
+            c1, c2 = cells
+
+            t1 = tecido_vals[cell_to_dof[c1.index()]]
+            t2 = tecido_vals[cell_to_dof[c2.index()]]
+
+            if (t1 == 2 and t2 == 0) or (t1 == 0 and t2 == 2):
+                facet_mark[facet] = 1
+
+            if (t1 == 2 and t2 == 1) or (t1 == 1 and t2 == 2):
+                facet_mark[facet] = 2
+
+    bc1 = df.DirichletBC(V, df.Constant(1.0), facet_mark, 1)
+    bc2 = df.DirichletBC(V, df.Constant(0.0), facet_mark, 2)
+
+    u = df.TrialFunction(V)
+    v = df.TestFunction(V)
+
+    a = df.dot(df.grad(u), df.grad(v)) * df.dx
+    L = df.Constant(0.0) * v * df.dx
+
+    u_sol = df.Function(V)
+
+    df.solve(a == L, u_sol, [bc1, bc2])
+
+    return u_sol
+    
 def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alpha_epi_lv, aux_beta_endo_lv, 
                     aux_beta_epi_lv, aux_alpha_endo_sept, aux_alpha_epi_sept, 
                     aux_beta_endo_sept, aux_beta_epi_sept, aux_alpha_endo_rv, 
@@ -191,6 +233,14 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
     tecido_fn.rename("tecido", "tecido")
     # =====================================================
 
+    # =====================================================
+    # NOVO: Resolver laplace na grayzone
+    # =====================================================
+    peso_tecido = solve_laplace_grayzone(mesh, tecido_fn)
+
+    peso_tecido.rename("peso_tecido", "peso_tecido")
+    # =====================================================
+
     print("Saving…")
     with df.XDMFFile(mesh.mpi_comm(), meshname + ".xdmf") as xdmf:
         xdmf.parameters.update(
@@ -205,6 +255,7 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
         xdmf.write(tecido_fn, 0)
         xdmf.write(u, 0)
         xdmf.write(region_id, 0)   # <- gravando região sem erro
+        xdmf.write(peso_tecido, 0) # NOVO: Add grayzone resolvida com Laplace 
 
     convert_xdmf_to_vtu(meshname)
 
@@ -244,3 +295,10 @@ def mirror_msh_x(in_msh, out_msh, about='centroid', x0=None):
     P[:,0] = 2.0*x0 - P[:,0]         # espelho no plano x = x0
     m.points = P
     meshio.write(out_msh, m, file_format='gmsh22', binary = False)  # <-- Gmsh v2 ASCII (compatível com dolfin-convert)
+
+
+# request_functions(pathMesh = "Patient_7_marked_smooth_mirX.msh", meshname = "Patient_7_marked_smooth_mirX",
+#     carpOutput = None, aux_alpha_endo_lv = -60, aux_alpha_epi_lv = 60, aux_beta_endo_lv = -20,
+#     aux_beta_epi_lv = 20, aux_alpha_endo_sept = -60, aux_alpha_epi_sept = 60, aux_beta_endo_sept = -20,
+#     aux_beta_epi_sept = 20, aux_alpha_endo_rv = -60, aux_alpha_epi_rv = 60, aux_beta_endo_rv = -20,
+#     aux_beta_epi_rv = 20)
