@@ -115,7 +115,7 @@ def mark_fibrosis(path_msh, stl_dir, output_path="saida_com_fibrose.msh", plot_c
         lower_name = fname.lower()
         if "core" in lower_name:
             tag_value = 2
-        elif "greyzone" in lower_name or "grayzone" in lower_name or "border" in lower_name:
+        elif "greyzone" in lower_name or "grayzone" in lower_name or "border" in lower_name or "gz" in lower_name:
             tag_value = 3
         else:
             tag_value = 2  # default core if not clear

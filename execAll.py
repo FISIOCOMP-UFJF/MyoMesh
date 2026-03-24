@@ -149,7 +149,7 @@ def execute_commands(input_file):
             print(f"Error: PLY file {ply_file} not found.")
             return
         try:
-            ply_to_stl_command = f"./convertPly2STL/build/bin/PlyToStl {ply_file} {stl_output} 0 1 0.02 200 0"
+            ply_to_stl_command = f"./convertPly2STL/build/bin/PlyToStl {ply_file} {stl_output} 0 1 0.02 40 0"
             subprocess.run(ply_to_stl_command, shell=True, check=True)
             print(f"STL file generated successfully: {stl_output}")
         except subprocess.CalledProcessError as e:
