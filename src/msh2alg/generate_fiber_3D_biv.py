@@ -1,6 +1,9 @@
+import os
+
 import dolfin as df
 import ldrb
 import meshio
+import numpy as np
 from .msh2carp import gmsh2carp
 
 
@@ -322,3 +325,82 @@ def mirror_msh_x(in_msh, out_msh, about='centroid', x0=None):
 #     aux_beta_epi_lv = 20, aux_alpha_endo_sept = -60, aux_alpha_epi_sept = 60, aux_beta_endo_sept = -20,
 #     aux_beta_epi_sept = 20, aux_alpha_endo_rv = -60, aux_alpha_epi_rv = 60, aux_beta_endo_rv = -20,
 #     aux_beta_epi_rv = 20)
+
+
+# ==============================================================================
+# BASE SURFACE EXTRACTION
+# ==============================================================================
+
+def extract_base_stl(msh_path, output_stl_path):
+    """
+    Reads the Gmsh .msh file and extracts the BASE surface (tag 10),
+    saving it as a separate STL file.
+    """
+    BASE_TAG = 10  # Physical Surface("BASE", 10) defined in biv_mesh.geo
+    mesh = meshio.read(msh_path)
+
+    base_cells = []
+    phys_tags = mesh.cell_data.get("gmsh:physical", [])
+
+    for cell_block, tags in zip(mesh.cells, phys_tags):
+        if cell_block.type == "triangle":
+            mask = tags == BASE_TAG
+            if mask.any():
+                base_cells.append(cell_block.data[mask])
+
+    if not base_cells:
+        print(f"[WARN] No BASE surface (tag {BASE_TAG}) found in {msh_path}.")
+        return False
+
+    base_mesh = meshio.Mesh(
+        points=mesh.points,
+        cells=[("triangle", np.vstack(base_cells))],
+    )
+    meshio.write(output_stl_path, base_mesh)
+    print(f"[OK] BASE STL saved: {output_stl_path}")
+    return True
+
+
+def extract_all_surfaces_stl(msh_path, output_dir, prefix):
+    """
+    Reads a Gmsh .msh file and extracts every physical surface (triangle tag)
+    as a separate STL file.
+
+    Files are saved as: <output_dir>/<prefix>-<NAME_OR_TAG>.stl
+    Names are resolved from the mesh field_data when available.
+    """
+    mesh = meshio.read(msh_path)
+
+    # Build tag -> name mapping from field_data (dimension 2 = surface)
+    tag_to_name = {}
+    for name, (tag_id, dim) in mesh.field_data.items():
+        if dim == 2:
+            tag_to_name[int(tag_id)] = name
+
+    phys_tags = mesh.cell_data.get("gmsh:physical", [])
+
+    # Collect triangles per tag
+    cells_per_tag = {}
+    for cell_block, tags in zip(mesh.cells, phys_tags):
+        if cell_block.type == "triangle":
+            for tag in np.unique(tags):
+                mask = tags == tag
+                cells_per_tag.setdefault(int(tag), []).append(cell_block.data[mask])
+
+    if not cells_per_tag:
+        print(f"[WARN] No surface triangles found in {msh_path}.")
+        return
+
+    os.makedirs(output_dir, exist_ok=True)
+    for tag, cell_list in cells_per_tag.items():
+        label = tag_to_name.get(tag, str(tag))
+        out_path = os.path.join(output_dir, f"{prefix}-{label}.stl")
+        surf_mesh = meshio.Mesh(
+            points=mesh.points,
+            cells=[("triangle", np.vstack(cell_list))],
+        )
+        meshio.write(out_path, surf_mesh)
+        print(f"[OK] Surface '{label}' (tag {tag}) saved: {out_path}")
+
+
+# ==============================================================================

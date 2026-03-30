@@ -149,7 +149,7 @@ def execute_commands(input_file):
             print(f"Error: PLY file {ply_file} not found.")
             return
         try:
-            ply_to_stl_command = f"./convertPly2STL/build/bin/PlyToStl {ply_file} {stl_output} 0 1 0.02 40 0"
+            ply_to_stl_command = f"./convertPly2STL/build/bin/PlyToStl {ply_file} {stl_output} 0 1 0.02 600 0"
             subprocess.run(ply_to_stl_command, shell=True, check=True)
             print(f"STL file generated successfully: {stl_output}")
         except subprocess.CalledProcessError as e:
@@ -229,7 +229,7 @@ def execute_commands(input_file):
     print("Generating the mesh with GMSH...")
     print("===================================================")
 
-
+    #exit(0)
     #==================================================
     #PROCESSO MARCACAO DAS FIBROSES NO LV
     #==================================================
@@ -242,6 +242,13 @@ def execute_commands(input_file):
     except Exception as e:
         print(f"Error generating model: {e}")
         return
+
+    # -----------------------------------------------------------------------
+    # Extract BASE surface from the generated mesh and save as STL
+    # -----------------------------------------------------------------------
+    base_stl = f"{stl_srf}/{patient_id}-BASE.stl"
+    extract_base_stl(msh, base_stl)
+    # -----------------------------------------------------------------------
     
     if flagScar:
         print("===================================================")
@@ -330,6 +337,10 @@ def execute_commands(input_file):
     else:
         marked_msh_path = f"{msh_srf}/{patient_id}.msh"
 
+    # Apply mirX to the final mesh and extract all surfaces as STL
+    #mirX_msh_path = f"{msh_srf}/{patient_id}_marked_smooth_mirX.msh"
+    #mirror_msh_x(marked_msh_path, mirX_msh_path, about="centroid")
+    #extract_all_surfaces_stl(mirX_msh_path, stl_srf, f"{patient_id}_mirX")
 
     try:
         msh2alg_command = (
