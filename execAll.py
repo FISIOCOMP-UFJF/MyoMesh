@@ -79,6 +79,9 @@ def execute_commands(input_file):
         shutil.rmtree(alg_output)
     os.makedirs(os.path.dirname(alg_output), exist_ok=True)
 
+    # Flag --invert_z para propagar aos subcomandos
+    invert_z_flag = "--invert_z" if args.invert_z else ""
+
     # Step 1: Process the .mat file
     print(f"Processing the file: {input_file}")
     try:
@@ -102,7 +105,12 @@ def execute_commands(input_file):
 
     # Step 2: Execute saveMsh.py
     try:
-        save_msh_command = f"python3 ./src/mat2msh/saveMsh.py --mat {aligned_mat_path} --output {txt_srf}"
+        save_msh_command = (
+            f"python3 ./src/mat2msh/saveMsh.py "
+            f"--mat {aligned_mat_path} "
+            f"--output {txt_srf} "
+            f"{invert_z_flag}"
+        )
         subprocess.run(save_msh_command, shell=True, check=True)
     except subprocess.CalledProcessError as e:
         print(f"Error executing saveMsh.py: {e}")
@@ -149,7 +157,7 @@ def execute_commands(input_file):
             print(f"Error: PLY file {ply_file} not found.")
             return
         try:
-            ply_to_stl_command = f"./convertPly2STL/build/bin/PlyToStl {ply_file} {stl_output} 0 1 0.02 600 0"
+            ply_to_stl_command = f"./convertPly2STL/build/bin/PlyToStl {ply_file} {stl_output} 0 1 0.02 200 0"
             subprocess.run(ply_to_stl_command, shell=True, check=True)
             print(f"STL file generated successfully: {stl_output}")
         except subprocess.CalledProcessError as e:
@@ -217,6 +225,7 @@ def execute_commands(input_file):
                 f"--output_path {output_dir} "
                 f"--patient_id {patient_id} "
                 f"--mode greyzone "
+                f"{invert_z_flag}"
             )
 
             subprocess.run(read_scar_command, shell=True, check=True)
@@ -251,8 +260,9 @@ def execute_commands(input_file):
     # -----------------------------------------------------------------------
     
     if flagScar:
+        print("")
         print("===================================================")
-        print("Generating LV-only mesh with GMSH...")
+        print("Processing scar files...")
         print("===================================================")
 
         lv_endo = f"{stl_srf}/{patient_id}-LVEndo.stl"
@@ -401,6 +411,7 @@ if __name__ == "__main__":
     parser.add_argument('--relaxation', type=float, default=0.05, help='Relaxation factor for mesh smoothing')
     parser.add_argument('--iterations', type=int, default=200, help='Number of iterations for mesh smoothing')
 
+    parser.add_argument('--invert_z', action='store_true', help='Flip the Z-axis by mirroring it at the center of the range [z_min, z_max].')
     parser.add_argument('--alpha_endo_lv', type=float, default=60, help='Fiber angle on the LV endocardium')
     parser.add_argument('--alpha_epi_lv', type=float, default=-60, help='Fiber angle on the LV epicardium')
     parser.add_argument('--beta_endo_lv', type=float, default=0, help='Sheet angle on the LV endocardium')

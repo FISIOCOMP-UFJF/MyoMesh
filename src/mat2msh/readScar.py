@@ -270,7 +270,14 @@ def align_fibrosis_txts_to_lvendo(output_path, patient_id, rois_dir):
             print(f"[ALIGN] Erro ao aplicar delta_xy em '{fpath}': {e}")
 
 def save_region_extruded_txts(polys_per_slice, dz, out_dir, region_name,
-                              num_layers=1, z_offset=0.0):
+                              num_layers=1, z_offset=0.0,
+                              invert_z=False, z_min=None, z_max=None):
+    """
+    ...docstring original...
+    """
+    if invert_z and (z_min is None or z_max is None):
+        raise ValueError("invert_z=True requer z_min e z_max.")
+
     os.makedirs(out_dir, exist_ok=True)
     txt_paths = []
 
@@ -280,6 +287,10 @@ def save_region_extruded_txts(polys_per_slice, dz, out_dir, region_name,
 
         z_base = z_offset + s * dz
         z_top  = z_base + dz
+
+        # Aplica inversão se solicitado
+        if invert_z:
+            z_base, z_top = z_min + z_max - z_top, z_min + z_max - z_base
 
         for c_idx, poly in enumerate(polys):
             if poly.size == 0:
@@ -418,6 +429,7 @@ def main():
         default="roi",
         help="roi = usa setstruct.Roi; greyzone = usa Scar/GreyZone.map"
     )
+    parser.add_argument("--invert_z", action="store_true", help="Inverte o eixo Z por espelho no centro do intervalo [z_min, z_max].")
 
     args = parser.parse_args()
 
@@ -450,6 +462,24 @@ def main():
         print(f"Dimensões do mapa: {lbl.shape} (H, W, S)")
         print(f"ResolutionX={res_x} mm/pixel, ResolutionY={res_y} mm/pixel, dz={dz} mm")
 
+        data_check = loadmat(args.matfile, simplify_cells=True)
+        epi_x = np.array(data_check["setstruct"]["EpiX"])
+        if epi_x.ndim == 3:
+            num_slices_malha = epi_x.shape[2]
+        elif epi_x.ndim == 2:
+            num_slices_malha = epi_x.shape[1]
+        else:
+            num_slices_malha = -1
+
+        print(f"[DIAG] Fatias na segmentação (EpiX): {num_slices_malha}")
+        print(f"[DIAG] Fatias no mapa GreyZone:      {lbl.shape[2]}")
+
+        if lbl.shape[2] != num_slices_malha:
+            print("[AVISO] Número de fatias DIVERGE — Z da fibrose pode estar desalinhado!")
+        else:
+            print("[OK] Número de fatias coincide.")
+
+
         shifts_x = np.loadtxt(args.shiftx) if args.shiftx is not None else None
         shifts_y = np.loadtxt(args.shifty) if args.shifty is not None else None
 
@@ -469,8 +499,24 @@ def main():
         z_offset = 1.0 * dz
         print(f"[GZ] Usando z_offset = {z_offset} com correção de shifts por fatia.")
 
-        _ = save_region_extruded_txts(gz_slices, dz, rois_dir, "greyzone", 1, z_offset)
-        _ = save_region_extruded_txts(core_slices, dz, rois_dir, "core", 1, z_offset)
+        S = lbl.shape[2]
+        # z_min/z_max baseados nos valid_indices da malha (igual ao saveMsh)
+        if epi_x.ndim == 3:
+            valid_mask = ~np.isnan(epi_x[:, 0, :]).all(axis=0)
+        else:
+            valid_mask = ~np.isnan(epi_x).all(axis=0)
+        valid_indices = np.where(valid_mask)[0]
+
+        z_min = (valid_indices[0]  + 1) * dz
+        z_max = (valid_indices[-1] + 1) * dz
+
+        if args.invert_z:
+            print(f"[invert_z] Espelhando Z em torno do centro de [{z_min:.4f}, {z_max:.4f}] mm")
+
+        _ = save_region_extruded_txts(gz_slices,   dz, rois_dir, "greyzone", 1, z_offset,
+                                      invert_z=args.invert_z, z_min=z_min, z_max=z_max)
+        _ = save_region_extruded_txts(core_slices, dz, rois_dir, "core",     1, z_offset,
+                                      invert_z=args.invert_z, z_min=z_min, z_max=z_max)
 
         generate_surfaces_and_stl(args.patient_id, rois_dir, ply_dir, stl_dir)
 

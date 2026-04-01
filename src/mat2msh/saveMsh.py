@@ -92,7 +92,7 @@ def adjust_resolution(setstruct, structures):
     return setstruct, valid_indices
 
 
-def save_structures_to_txt(mat_filename, output_dir):
+def save_structures_to_txt(mat_filename, output_dir, invert_z=False):
     """
     Saves the coordinates of structures (LVEndo, LVEpi, RVEndo, RVEpi) to unique .txt files,
     containing all slices for each structure in MATLAB format.
@@ -100,6 +100,7 @@ def save_structures_to_txt(mat_filename, output_dir):
     Parameters:
     - mat_filename: Path to the .mat file.
     - output_dir: Directory where the files will be saved.
+    - invert_z: If True, mirrors Z around the center of [z_min, z_max].
     """
     # Create an output directory based on the current date
     output_path = output_dir
@@ -134,6 +135,15 @@ def save_structures_to_txt(mat_filename, output_dir):
         print("No valid slices to process.")
         return None
 
+    dz = slice_thickness + slice_gap
+
+    # Limites do intervalo Z para o espelho
+    z_min = (valid_indices[0]  + 1) * dz
+    z_max = (valid_indices[-1] + 1) * dz
+
+    if invert_z:
+        print(f"[invert_z] Espelhando Z em torno do centro do intervalo [{z_min:.4f}, {z_max:.4f}] mm")
+
     # Process each structure
     for name, (x_attr, y_attr) in structures.items():
         try:
@@ -145,6 +155,11 @@ def save_structures_to_txt(mat_filename, output_dir):
             # Create Z values starting at 0 for valid slices
             z_base = (valid_indices + 1) * (slice_thickness + slice_gap)
             #print(valid_indices) 
+
+            # Inverte Z se solicitado
+            if invert_z:
+                z_base = z_min + z_max - z_base
+
             z_values = np.tile(z_base, (num_points, 1))
 
             # Output file name
@@ -177,13 +192,14 @@ def main():
     parser = argparse.ArgumentParser(description="Export structures from .mat to .txt.")
     parser.add_argument("--mat", type=str, required=True, help="Path to the aligned .mat file.")
     parser.add_argument("--output", type=str, default="output", help="Base output directory.")
+    parser.add_argument("--invert_z", action="store_true", help="Inverte o eixo Z por espelho no centro do intervalo [z_min, z_max].")
     args = parser.parse_args()
 
     if not os.path.exists(args.mat):
         print(f"Error: The file {args.mat} does not exist.")
         return
 
-    output_txt = save_structures_to_txt(args.mat, args.output)
+    output_txt = save_structures_to_txt(args.mat, args.output, invert_z=args.invert_z)
     if not output_txt:
         print("Error during export to .txt.")
         return

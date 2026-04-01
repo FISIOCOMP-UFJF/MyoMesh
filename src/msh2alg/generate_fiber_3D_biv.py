@@ -308,14 +308,14 @@ def mirror_msh_x(in_msh, out_msh, about='centroid', x0=None):
     """
     m = meshio.read(in_msh)
     P = m.points.copy()
-    if x0 is None:
-        if about == 'centroid':
-            x0 = P[:,0].mean()
-        elif about == 'bbox':
-            x0 = 0.5*(P[:,0].min() + P[:,0].max())
-        else:
-            raise ValueError("about deve ser 'centroid' ou 'bbox' se x0=None")
-    P[:,0] = 2.0*x0 - P[:,0]         # espelho no plano x = x0
+    #if x0 is None:
+    #    if about == 'centroid':
+    #        x0 = P[:,0].mean()
+    #    elif about == 'bbox':
+    #        x0 = 0.5*(P[:,0].min() + P[:,0].max())
+    #    else:
+    #        raise ValueError("about deve ser 'centroid' ou 'bbox' se x0=None")
+    #P[:,0] = 2.0*x0 - P[:,0]         # espelho no plano x = x0
     m.points = P
     meshio.write(out_msh, m, file_format='gmsh22', binary = False)  # <-- Gmsh v2 ASCII (compatível com dolfin-convert)
 
