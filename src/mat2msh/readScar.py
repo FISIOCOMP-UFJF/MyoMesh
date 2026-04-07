@@ -429,7 +429,7 @@ def main():
         default="roi",
         help="roi = usa setstruct.Roi; greyzone = usa Scar/GreyZone.map"
     )
-    parser.add_argument("--invert_z", action="store_true", help="Inverte o eixo Z por espelho no centro do intervalo [z_min, z_max].")
+    parser.add_argument("--no_invert_z", action="store_true", help="Desativa a inversão do eixo Z (por padrão Z é espelhado no centro de [z_min, z_max]).")
 
     args = parser.parse_args()
 
@@ -510,13 +510,14 @@ def main():
         z_min = (valid_indices[0]  + 1) * dz
         z_max = (valid_indices[-1] + 1) * dz
 
-        if args.invert_z:
+        invert_z = not args.no_invert_z
+        if invert_z:
             print(f"[invert_z] Espelhando Z em torno do centro de [{z_min:.4f}, {z_max:.4f}] mm")
 
         _ = save_region_extruded_txts(gz_slices,   dz, rois_dir, "greyzone", 1, z_offset,
-                                      invert_z=args.invert_z, z_min=z_min, z_max=z_max)
+                                      invert_z=invert_z, z_min=z_min, z_max=z_max)
         _ = save_region_extruded_txts(core_slices, dz, rois_dir, "core",     1, z_offset,
-                                      invert_z=args.invert_z, z_min=z_min, z_max=z_max)
+                                      invert_z=invert_z, z_min=z_min, z_max=z_max)
 
         generate_surfaces_and_stl(args.patient_id, rois_dir, ply_dir, stl_dir)
 

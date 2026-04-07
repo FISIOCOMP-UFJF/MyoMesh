@@ -239,22 +239,24 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
     # =====================================================
     # NOVO: Resolver laplace na grayzone
     # =====================================================
-    peso_tecido = solve_laplace_grayzone(mesh, tecido_fn)
-
     V0 = tecido_fn.function_space()
-    peso_tecido = df.project(peso_tecido, V0)
+    has_greyzone = np.any(tecido_fn.vector().get_local() == 2.0)
 
-    peso_arr   = peso_tecido.vector().get_local()
+    if has_greyzone:
+        peso_tecido = solve_laplace_grayzone(mesh, tecido_fn)
+        peso_tecido = df.project(peso_tecido, V0)
+        peso_arr = peso_tecido.vector().get_local()
+        peso_arr[peso_arr > 1.0] = 1.0
+        peso_arr[peso_arr < 0.0] = 0.0
+    else:
+        peso_tecido = df.Function(V0)
+        peso_arr = np.ones(len(tecido_fn.vector().get_local()))
+
     tecido_arr = tecido_fn.vector().get_local()
 
-    peso_arr[peso_arr > 1.0] = 1.0
-    peso_arr[peso_arr < 0.0] = 0.0
-
     for i in range(len(peso_arr)):
-
         if tecido_arr[i] == 0:      # saudável
             peso_arr[i] = 1.0
-
         elif tecido_arr[i] == 1:    # fibrose/core
             peso_arr[i] = 0.0
 

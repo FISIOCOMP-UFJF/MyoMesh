@@ -192,14 +192,14 @@ def main():
     parser = argparse.ArgumentParser(description="Export structures from .mat to .txt.")
     parser.add_argument("--mat", type=str, required=True, help="Path to the aligned .mat file.")
     parser.add_argument("--output", type=str, default="output", help="Base output directory.")
-    parser.add_argument("--invert_z", action="store_true", help="Inverte o eixo Z por espelho no centro do intervalo [z_min, z_max].")
+    parser.add_argument("--no_invert_z", action="store_true", help="Desativa a inversão do eixo Z (por padrão Z é espelhado no centro de [z_min, z_max]).")
     args = parser.parse_args()
 
     if not os.path.exists(args.mat):
         print(f"Error: The file {args.mat} does not exist.")
         return
 
-    output_txt = save_structures_to_txt(args.mat, args.output, invert_z=args.invert_z)
+    output_txt = save_structures_to_txt(args.mat, args.output, invert_z=not args.no_invert_z)
     if not output_txt:
         print("Error during export to .txt.")
         return
