@@ -17,6 +17,7 @@
 - [Module Descriptions](#module-descriptions)
 - [Notes](#notes)
 - [References](#references)
+- [How to cite](#how-to-cite)
 
 ---
 
@@ -428,9 +429,14 @@ Gmsh geometry script defining the biventricular mesh topology. Specifies compoun
 
 ## References
 
-- Bayer, J.D., Blake, R.C., Plank, G., & Trayanova, N.A. (2012). A novel rule-based algorithm for assigning myocardial fiber orientation to computational heart models. *Annals of Biomedical Engineering*, 40(10), 2243–2254. https://doi.org/10.1007/s10439-012-0593-5
-- Finsberg, H. et al. ldrb: A Python library for assigning myocardial fiber orientations. https://github.com/finsberg/ldrb
-- Geuzaine, C. & Remacle, J.F. (2009). Gmsh: A 3-D finite element mesh generator with built-in pre- and post-processing facilities. *International Journal for Numerical Methods in Engineering*, 79(11), 1309–1331.
-- Logg, A., Mardal, K.A., & Wells, G.N. (Eds.) (2012). *Automated Solution of Differential Equations by the Finite Element Method*. Springer. https://doi.org/10.1007/978-3-642-23099-8
+- Bayer, J. D., Blake, R. C., Plank, G., & Trayanova, N. A. (2012). *A novel rule-based algorithm for assigning myocardial fiber orientation to computational heart models*. Annals of Biomedical Engineering, 40(10), 2243–2254. https://doi.org/10.1007/s10439-012-0593-5  
 
-> *(Add your publication citation here when available)*
+- Finsberg, H., et al. (n.d.). *ldrb: A Python library for assigning myocardial fiber orientations*. GitHub repository. https://github.com/finsberg/ldrb  
+Geuzaine, C., & Remacle, J.-F. (2009). *Gmsh: A 3-D finite element mesh generator with built-in pre- and post-processing facilities*. International Journal for Numerical Methods in Engineering, 79(11), 1309–1331.  
+
+- Logg, A., Mardal, K.-A., & Wells, G. N. (Eds.). (2012). *Automated solution of differential equations by the finite element method*. Springer. https://doi.org/10.1007/978-3-642-23099-8  
+
+
+## How to Cite
+
+> Namorato, F. L., Leme, D. M. P., Soares, T. J., Oliveira, R. S., Schmal, T. R., dos Santos, R. W., & Campos, J. O. (2025). *Development of a three-dimensional computational pipeline in Python for personalized heart modeling*. Computing in Cardiology (CinC), 52, 1–4. https://doi.org/10.22489/CinC.2025.329
