@@ -15,7 +15,8 @@ fatias_txt/*
 *.alg
 *.msh
 *.log
-
+*.png
+paraview*
 .ccls-cache/
 .idea/
 CMakeCache.txt

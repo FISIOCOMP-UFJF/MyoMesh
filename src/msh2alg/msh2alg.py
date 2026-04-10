@@ -14,8 +14,12 @@ def run_command_live(cmd_list, cwd=None):
         cwd=cwd
     )
     for line in process.stdout:
-        print(line, end='')
+        if line.startswith("Progress"):
+            print('\r' + line.rstrip(), end='', flush=True)
+        else:
+            print(line, end='', flush=True)
 
+    print()
     process.wait()
     if process.returncode != 0:
         raise subprocess.CalledProcessError(process.returncode, cmd_list)
@@ -37,7 +41,8 @@ def run_msh2alg(
     discretization=1000,
     alpha_endo_lv=30, alpha_epi_lv=-30, beta_endo_lv=0, beta_epi_lv=0,
     alpha_endo_sept=60, alpha_epi_sept=-60, beta_endo_sept=0, beta_epi_sept=0,
-    alpha_endo_rv=80, alpha_epi_rv=-80, beta_endo_rv=0, beta_epi_rv=0
+    alpha_endo_rv=80, alpha_epi_rv=-80, beta_endo_rv=0, beta_epi_rv=0,
+    log_file=None
 ):
     #print(carp)
     # --- ESPELHA O .MSH ANTES DE CONVERTER PARA XML ---
@@ -52,14 +57,17 @@ def run_msh2alg(
                 beta_endo_rv, beta_epi_rv)    
     print(50*"=", flush = True)
     print("Converting to alg...")
-    run_command_live([
+    cmd = [
         './bin/HexaMeshFromVTK',
         '-i', f"../{meshname}.vtu",
         '--dx', str(dx), '--dy', str(dy), '--dz', str(dz),
         '-r', str(discretization),
         '-c', '../src/msh2alg/conf.ini',
         '-o', f"../{alg}.alg"
-    ], cwd='./hexa-mesh-from-VTK_vtk9/')
+    ]
+    if log_file:
+        cmd += ['-l', f"../{log_file}"]
+    run_command_live(cmd, cwd='./hexa-mesh-from-VTK_vtk9/')
 
 
 if __name__ == "__main__":
@@ -70,6 +78,7 @@ if __name__ == "__main__":
     parser.add_argument('-r', type=int, default=1000, help='Discretization resolution')
     parser.add_argument('--carp', type=str, default='', help='Output OpenCARP')
     parser.add_argument('--alg', type=str, default='', help='Output OpenAlg')
+    parser.add_argument('--log_file', type=str, default=None, help='Path to log file for HexaMeshFromVTK output')
 
     parser.add_argument('--dx', type=float, default=0.5)
     parser.add_argument('--dy', type=float, default=0.5)
@@ -105,4 +114,5 @@ if __name__ == "__main__":
         beta_endo_sept=args.beta_endo_sept, beta_epi_sept=args.beta_epi_sept,
         alpha_endo_rv=args.alpha_endo_rv, alpha_epi_rv=args.alpha_epi_rv,
         beta_endo_rv=args.beta_endo_rv, beta_epi_rv=args.beta_epi_rv,
+        log_file=args.log_file,
     )

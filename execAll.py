@@ -1,4 +1,5 @@
 import os
+import logging
 from datetime import datetime
 import subprocess
 from src.mat2msh.readMat import readMat
@@ -6,20 +7,41 @@ from src.mat2msh.readScar import msh_tag_to_ply
 import argparse
 import shutil
 from scipy.io import loadmat
+from src.msh2alg.generate_fiber_3D_biv import *
+
+
+def setup_logging(log_path):
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    logger.handlers.clear()
+
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+
+    file_handler = logging.FileHandler(log_path, mode="w")
+    file_handler.setFormatter(formatter)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+
 
 def execute_commands(input_file):
    
     filename = os.path.basename(input_file)
     patient_id = os.path.splitext(filename)[0]
    
-    print("========================================================================================")
-    print("Starting the pipeline for patient data processing.")
-    print("========================================================================================")
     # Create the output folder with the current date
     date_str = datetime.now().strftime("%Y%m%d_%H%M")
     output_dir = f"./output/{date_str}/{patient_id}"
     os.makedirs(output_dir, exist_ok=True)
     aligned_mat_path = f"{output_dir}/{patient_id}.mat"
+
+    setup_logging(os.path.join(output_dir, "pipeline.log"))
+    logging.info("========================================================================================")
+    logging.info("Starting the pipeline for patient data processing.")
+    logging.info("========================================================================================")
 
     # Paths for surfaces and intermediate files
     stl_srf = f"{output_dir}/patientSTL"
@@ -32,7 +54,11 @@ def execute_commands(input_file):
     mesh_output_base = f"{output_dir}/fenicsFiles/{patient_id}"
     carp_output = f"{output_dir}/carpFiles/{patient_id}"
     alg_output = f"{output_dir}/algFiles/{patient_id}"
+    log_dir = os.path.join(output_dir, "logs")
     
+    if os.path.exists(log_dir):
+        shutil.rmtree(log_dir)
+    os.makedirs(log_dir, exist_ok=True)
 
     if os.path.exists(scar_ply_smooth):
         shutil.rmtree(scar_ply_smooth)
@@ -74,35 +100,38 @@ def execute_commands(input_file):
         shutil.rmtree(alg_output)
     os.makedirs(os.path.dirname(alg_output), exist_ok=True)
 
-    # Step 1: Process the .mat file
-    print(f"Processing the file: {input_file}")
-    try:
-        # Attempt to process the .mat file
-        readMat(input_file, output_dir=output_dir)
+    # Flag --no_invert_z para propagar aos subcomandos (por padrão inverte Z)
+    invert_z_flag = "--no_invert_z" if args.no_invert_z else ""
 
-        print("MAT file processed successfully.")
+    # Step 1: Process the .mat file
+    logging.info(f"Processing the file: {input_file}")
+    try:
+        readMat(input_file, output_dir=output_dir)
+        logging.info("MAT file processed successfully.")
     except FileNotFoundError:
-        # Handle the case where the file does not exist
-        print(f"Error: The file {input_file} does not exist.")
+        logging.error(f"Error: The file {input_file} does not exist.")
         return
     except ValueError as ve:
-        # Handle cases where the file content is invalid
-        print(f"Error: Invalid content in {input_file}: {ve}")
+        logging.error(f"Error: Invalid content in {input_file}: {ve}")
         return
     except Exception as e:
-        # Handle any other unforeseen errors
-        print(f"Unexpected error while processing {input_file}: {e}")
+        logging.error(f"Unexpected error while processing {input_file}: {e}")
         return
-    print("===================================================")
+    logging.info("===================================================")
 
     # Step 2: Execute saveMsh.py
     try:
-        save_msh_command = f"python3 ./src/mat2msh/saveMsh.py --mat {aligned_mat_path} --output {txt_srf}"
+        save_msh_command = (
+            f"python3 ./src/mat2msh/saveMsh.py "
+            f"--mat {aligned_mat_path} "
+            f"--output {txt_srf} "
+            f"{invert_z_flag}"
+        )
         subprocess.run(save_msh_command, shell=True, check=True)
     except subprocess.CalledProcessError as e:
-        print(f"Error executing saveMsh.py: {e}")
+        logging.error(f"Error executing saveMsh.py: {e}")
         return
-    print("===================================================")
+    logging.info("===================================================")
 
     # Step 3: Generate surfaces
     surface_files = [
@@ -120,9 +149,9 @@ def execute_commands(input_file):
             )
             subprocess.run(surface_command, shell=True, check=True)
         except subprocess.CalledProcessError as e:
-            print(f"Error generating surface for {surface_file}: {e}")
+            logging.error(f"Error generating surface for {surface_file}: {e}")
             return
-    print("===================================================")
+    logging.info("===================================================")
 
     # Step 4: Convert PLY files to STL
     ply_files = [
@@ -141,32 +170,30 @@ def execute_commands(input_file):
 
     for ply_file, stl_output in zip(ply_files, stl_outputs):
         if not os.path.exists(ply_file):
-            print(f"Error: PLY file {ply_file} not found.")
+            logging.error(f"PLY file not found: {ply_file}")
             return
         try:
-            ply_to_stl_command = f"./convertPly2STL/build/bin/PlyToStl {ply_file} {stl_output} 0 1 0.02 200 0"
+            ply_to_stl_command = f"./convertPly2STL/build/bin/PlyToStl {ply_file} {stl_output} 0 1 {args.mesh_relaxation} {args.mesh_iterations} 0"
             subprocess.run(ply_to_stl_command, shell=True, check=True)
-            print(f"STL file generated successfully: {stl_output}")
+            logging.info(f"STL file generated successfully: {stl_output}")
         except subprocess.CalledProcessError as e:
-            print(f"Error converting {ply_file} to {stl_output}: {e}")
+            logging.error(f"Error converting {ply_file} to {stl_output}: {e}")
             return
 
-    # Final Processing
-    print(f"STL files generated successfully in: {stl_srf}")
-    print("===================================================")
-    # Step 5: Generate the `.msh` file using Gmsh
+    logging.info(f"STL files generated successfully in: {stl_srf}")
+    logging.info("===================================================")
 
-    # Gmsh and generation scripts
+    # Step 5: Generate the .msh file using Gmsh
     gmsh = "./scripts/gmsh-2.13.1/bin/gmsh"
     biv_mesh_geo = "./scripts/biv_mesh.geo"
 
     lv_endo = f"{stl_srf}/{patient_id}-LVEndo.stl"
     rv_endo = f"{stl_srf}/{patient_id}-RVEndo.stl"
     rv_epi = f"{stl_srf}/{patient_id}-RVEpi.stl"
+    lv_epi = f"{stl_srf}/{patient_id}-LVEpi.stl"
 
-    msh_heart = f"{msh_srf}/{patient_id}_model.msh"
     msh = f"{msh_srf}/{patient_id}.msh"
-    out_log = f"{msh_srf}/{patient_id}.log"
+    out_log = f"{log_dir}/{patient_id}_gmsh.log"
 
     flagScar = False
     try:
@@ -177,7 +204,7 @@ def execute_commands(input_file):
             has_roi = False
             if "Roi" in ss:
                 roi_obj = ss["Roi"]
-                has_roi = roi_obj is not None and roi_obj != []  
+                has_roi = roi_obj is not None and roi_obj != []
 
             has_gz = False
             try:
@@ -189,148 +216,147 @@ def execute_commands(input_file):
             flagScar = bool(has_roi or has_gz)
 
         if not flagScar:
-            print(f"Nenhuma ROI ou GreyZone encontrada em '{aligned_mat_path}'.")
+            logging.info(f"No ROI or GreyZone found in '{aligned_mat_path}'.")
     except Exception as e:
-        print(f"Problema ao verificar scar em '{aligned_mat_path}': {e}")
+        logging.error(f"Error checking scar in '{aligned_mat_path}': {e}")
         flagScar = False
-    
-    if flagScar:
-        print("Extracting scars from the .mat file...")
-        print("===================================================")
-        # Step 6: Execute readScar.py
-        try:
-            
-            print(f"Aligned MAT file path: {aligned_mat_path}")
-            msh_path = f"{msh_srf}/{patient_id}.msh"
-            output_marked = f"{msh_srf}/{patient_id}_marked.msh"
 
+    if flagScar:
+        logging.info("Extracting scars from the .mat file...")
+        logging.info("===================================================")
+        try:
             read_scar_command = (
                 f"python3 ./src/mat2msh/readScar.py {aligned_mat_path} "
                 f"--shiftx {output_dir}/endo_shifts_x.txt "
                 f"--shifty {output_dir}/endo_shifts_y.txt "
                 f"--output_path {output_dir} "
                 f"--patient_id {patient_id} "
-                f"--mode greyzone"
+                f"--mode greyzone "
+                f"{invert_z_flag}"
             )
-
             subprocess.run(read_scar_command, shell=True, check=True)
-            print("Scar pipeline executed and fibrosis marked successfully.")
-
+            logging.info("Scar pipeline executed and fibrosis marked successfully.")
         except subprocess.CalledProcessError as e:
-            print(f"Error executing readScar.py: {e}")
+            logging.error(f"Error executing readScar.py: {e}")
             return
-    print("===================================================")
-    print("Generating the mesh with GMSH...")
-    print("===================================================")
-    # Command with os.system
-    try:
-        os.system('{} -3 {} -merge {} {} {} -o {} 2>&1 {}'.format(
-            gmsh, lv_endo, rv_endo, rv_epi, biv_mesh_geo, msh, out_log))
-        print(f"Model generated successfully: {msh_heart}")
-    except Exception as e:
-        print(f"Error generating model: {e}")
-        return
-    
+
+    logging.info("===================================================")
+    logging.info("Generating the mesh with GMSH...")
+    logging.info("===================================================")
+
+    os.system('{} -3 {} -merge {} {} {} -clmax {} -clmin {} -o {} 2>&1 {}'.format(
+        gmsh, lv_endo, rv_endo, rv_epi, biv_mesh_geo, args.cl_max, args.cl_min, msh, out_log))
+    logging.info(f"Model generated successfully: {msh}")
+
+    # Extract BASE surface from the generated mesh and save as STL
+    base_stl = f"{stl_srf}/{patient_id}-BASE.stl"
+    extract_base_stl(msh, base_stl)
+
     if flagScar:
-        print("")
-        print("===================================================")
-        print("Processing scar files...")
-        print("===================================================")
-        # Step 7: Execute mark_fibrosis_script.py for first marking
-        try:
-            msh_path = f"{msh_srf}/{patient_id}.msh"
-            output_marked = f"{msh_srf}/{patient_id}_marked.msh"
-            mark_scar_command = (
-                f"python3 ./src/mat2msh/markFibroseFromMsh.py "
-                f"--msh {msh_path} "
-                f"--stl_dir {scar_srf} "
-                f"--output_path {output_marked}"
-            )
-            subprocess.run(mark_scar_command, shell=True, check=True)
-            print("===================================================")
-            print("Fibrosis successfully marked in the mesh.")
-            print("===================================================")
+        logging.info("===================================================")
+        logging.info("Processing scar files...")
+        logging.info("===================================================")
 
-        except subprocess.CalledProcessError as e:
-            print(f"Error executing mark_fibrosis_script.py: {e}")
+        lv_geo = "./scripts/lv_mesh.geo"
+        msh_teste = f"{msh_srf}/{patient_id}_lv.msh"
+        out_log_lv = f"{log_dir}/{patient_id}_gmsh_lv.log"
+        cmd = '{} -3 {} -merge {} {} -o {} > {} 2>&1'.format(
+            gmsh, lv_endo, lv_epi, lv_geo, msh_teste, out_log_lv
+        )
+
+        ret = os.system(cmd)
+
+        if not os.path.exists(msh_teste):
+            logging.error(f"[FATAL] LV-only mesh not generated. Exit code: {ret}. Log: {out_log_lv}")
             return
-        
+        elif ret != 0:
+            logging.warning(f"[WARN] Gmsh returned non-zero code ({ret}) but mesh exists. Proceeding.")
 
-        print("===================================================")
-        print("Marking fibrosis in the mesh...")
-        print("===================================================")
-        msh_path = f"{msh_srf}/{patient_id}_marked.msh"
-        msh_tag_to_ply(msh_path, 2, scar_ply_smooth+f"/{patient_id}_fibrosis.ply")
-        
-        # Converte o PLY da fibrose para STL usando PlyToStl
-        ply_file = scar_ply_smooth + f"/{patient_id}_fibrosis.ply"
-        stl_output = scar_stl_smooth + f"/{patient_id}_fibrosis.stl"
+        logging.info(f"[OK] LV-only generated: {msh_teste}")
 
-        try:
-            convert_command = f"./convertPly2STL/build/bin/PlyToStl {ply_file} {stl_output} 1 1 {args.relaxation} {args.iterations} 2"
-            subprocess.run(convert_command, shell=True, check=True)
-            print(f"STL da fibrose gerado com sucesso: {stl_output}")
-        except subprocess.CalledProcessError as e:
-            print(f"Erro ao converter {ply_file} para STL: {e}")
-            return
+        msh_lv = msh_teste
+        lv_marked = f"{msh_srf}/{patient_id}_lv_marked.msh"
 
-        try:
-            msh_path = f"{msh_srf}/{patient_id}.msh"
-            output_marked = f"{msh_srf}/{patient_id}_marked_smooth.msh"
-            mark_scar_command = (
-                f"python3 ./src/mat2msh/markFibroseFromMsh.py "
-                f"--msh {msh_path} "
-                f"--stl_dir {scar_stl_smooth} "
-                f"--output_path {output_marked}"
-            )
-            subprocess.run(mark_scar_command, shell=True, check=True)
-            print("===================================================")
-            print("Fibrosis successfully marked in the mesh.")
-            print("===================================================")
+        mark_scar_lv_cmd = (
+            f"python3 ./src/mat2msh/markFibroseFromMsh.py "
+            f"--msh {msh_lv} "
+            f"--stl_dir {scar_srf} "
+            f"--output_path {lv_marked}"
+        )
+        subprocess.run(mark_scar_lv_cmd, shell=True, check=True)
+        logging.info(f"[OK] Fibrosis marked on LV-only: {lv_marked}")
 
-        except subprocess.CalledProcessError as e:
-            print(f"Error executing mark_fibrosis_script.py: {e}")
-            return
-    
-    print("===================================================")
-    print("Converting msh to alg format...")
-    print("===================================================")
-    
+        core_ply = os.path.join(scar_ply_smooth, f"{patient_id}_core_from_lv.ply")
+        gz_ply   = os.path.join(scar_ply_smooth, f"{patient_id}_gz_from_lv.ply")
+
+        msh_tag_to_ply(lv_marked, tag=2, ply_path=core_ply)
+        msh_tag_to_ply(lv_marked, tag=3, ply_path=gz_ply)
+
+        core_stl = os.path.join(scar_stl_smooth, f"{patient_id}_core_smooth.stl")
+        gz_stl   = os.path.join(scar_stl_smooth, f"{patient_id}_gz_smooth.stl")
+
+        logging.info("Smoothing fibrosis surfaces...")
+        subprocess.run(
+            f"./convertPly2STL/build/bin/PlyToStl {core_ply} {core_stl} 1 1 {args.relaxation} {args.iterations} 2",
+            shell=True, check=True
+        )
+        subprocess.run(
+            f"./convertPly2STL/build/bin/PlyToStl {gz_ply} {gz_stl} 1 1 {args.relaxation} {args.iterations} 2",
+            shell=True, check=True
+        )
+
+        healthy_msh = f"{msh_srf}/{patient_id}.msh"
+        healthy_marked_smooth = f"{msh_srf}/{patient_id}_marked_smooth.msh"
+
+        cmd2 = (
+            f"python3 ./src/mat2msh/markFibroseFromMsh.py "
+            f"--msh {healthy_msh} "
+            f"--stl_dir {scar_stl_smooth} "
+            f"--output_path {healthy_marked_smooth}"
+        )
+        subprocess.run(cmd2, shell=True, check=True)
+        logging.info(f"[OK] Healthy mesh re-marked with fibrosis: {healthy_marked_smooth}")
+
+        mirror_msh_x(msh_teste, f"{msh_srf}/{patient_id}_mirX_lv.msh", about="centroid")
+
+    logging.info("===================================================")
+    logging.info("Converting msh to alg format...")
+    logging.info("===================================================")
+
     if flagScar:
-        marked_msh_path = output_marked
+        marked_msh_path = f"{msh_srf}/{patient_id}_marked_smooth.msh"
     else:
         marked_msh_path = f"{msh_srf}/{patient_id}.msh"
 
-
     try:
+        hexa_log = f"{log_dir}/{patient_id}_hexa.log"
         msh2alg_command = (
             f"PYTHONPATH=. python3 ./src/msh2alg/msh2alg.py "
             f"-i {marked_msh_path} "
             f"-o {mesh_output_base} "
             f"--carp {carp_output} "
             f"--alg {alg_output} "
-            f"-r {args.resolution} "              
+            f"-r {args.resolution} "
             f"--dx {args.dx} --dy {args.dy} --dz {args.dz} "
             f"--alpha_endo_lv {args.alpha_endo_lv} --alpha_epi_lv {args.alpha_epi_lv} "
             f"--beta_endo_lv {args.beta_endo_lv} --beta_epi_lv {args.beta_epi_lv} "
             f"--alpha_endo_sept {args.alpha_endo_sept} --alpha_epi_sept {args.alpha_epi_sept} "
             f"--beta_endo_sept {args.beta_endo_sept} --beta_epi_sept {args.beta_epi_sept} "
             f"--alpha_endo_rv {args.alpha_endo_rv} --alpha_epi_rv {args.alpha_epi_rv} "
-            f"--beta_endo_rv {args.beta_endo_rv} --beta_epi_rv {args.beta_epi_rv}"
+            f"--beta_endo_rv {args.beta_endo_rv} --beta_epi_rv {args.beta_epi_rv} "
+            f"--log_file {hexa_log}"
         )
-
         subprocess.run(msh2alg_command, shell=True, check=True)
-        print("===================================================")
-        print("Mesh successfully converted to ALG format.")
-        print("===================================================")
-
+        logging.info("===================================================")
+        logging.info("Mesh successfully converted to ALG format.")
+        logging.info("===================================================")
     except subprocess.CalledProcessError as e:
-        print(f"Error converting msh to alg: {e}")
+        logging.error(f"Error converting msh to alg: {e}")
         return
 
-    print("========================================================================================")
-    print("                         Finished processing the patient data.")
-    print("========================================================================================")
+    logging.info("========================================================================================")
+    logging.info("                         Finished processing the patient data.")
+    logging.info("========================================================================================")
     # Clean up intermediate files
     os.remove(f"{output_dir}/endo_shifts_x.txt")
     os.remove(f"{output_dir}/endo_shifts_y.txt")
@@ -358,11 +384,18 @@ if __name__ == "__main__":
     parser.add_argument('-dy', type=float, default=0.5, help='dy')
     parser.add_argument('-dz', type=float, default=0.5, help='dz')
 
-    parser.add_argument('--relaxation', type=float, default=0.05, help='Relaxation factor for mesh smoothing')
-    parser.add_argument('--iterations', type=int, default=200, help='Number of iterations for mesh smoothing')
+    parser.add_argument('--relaxation', type=float, default=0.05, help='Relaxation factor for scar/fibrosis surface smoothing')
+    parser.add_argument('--iterations', type=int, default=200, help='Number of iterations for scar/fibrosis surface smoothing')
 
-    parser.add_argument('--alpha_endo_lv', type=float, default=30, help='Fiber angle on the LV endocardium')
-    parser.add_argument('--alpha_epi_lv', type=float, default=-30, help='Fiber angle on the LV epicardium')
+    parser.add_argument('--mesh_relaxation', type=float, default=0.02, help='Relaxation factor for cardiac surface smoothing (RVEndo, LVEpi, LVEndo)')
+    parser.add_argument('--mesh_iterations', type=int, default=200, help='Number of iterations for cardiac surface smoothing (RVEndo, LVEpi, LVEndo)')
+
+    parser.add_argument('--cl_max', type=float, default=2.0, help='Gmsh CharacteristicLengthMax: maximum element size in the mesh')
+    parser.add_argument('--cl_min', type=float, default=1.0, help='Gmsh CharacteristicLengthMin: minimum element size in the mesh')
+
+    parser.add_argument('--no_invert_z', action='store_true', help='Disable Z-axis flip (by default Z is mirrored at the center of [z_min, z_max]).')
+    parser.add_argument('--alpha_endo_lv', type=float, default=60, help='Fiber angle on the LV endocardium')
+    parser.add_argument('--alpha_epi_lv', type=float, default=-60, help='Fiber angle on the LV epicardium')
     parser.add_argument('--beta_endo_lv', type=float, default=0, help='Sheet angle on the LV endocardium')
     parser.add_argument('--beta_epi_lv', type=float, default=0, help='Sheet angle on the LV epicardium')
 
@@ -371,8 +404,8 @@ if __name__ == "__main__":
     parser.add_argument('--beta_endo_sept', type=float, default=0, help='Sheet angle on the Septum endocardium')
     parser.add_argument('--beta_epi_sept', type=float, default=0, help='Sheet angle on the Septum epicardium')
 
-    parser.add_argument('--alpha_endo_rv', type=float, default=80, help='Fiber angle on the RV endocardium')
-    parser.add_argument('--alpha_epi_rv', type=float, default=-80, help='Fiber angle on the RV epicardium')
+    parser.add_argument('--alpha_endo_rv', type=float, default=60, help='Fiber angle on the RV endocardium')
+    parser.add_argument('--alpha_epi_rv', type=float, default=-60, help='Fiber angle on the RV epicardium')
     parser.add_argument('--beta_endo_rv', type=float, default=0, help='Sheet angle on the RV endocardium')
     parser.add_argument('--beta_epi_rv', type=float, default=0, help='Sheet angle on the RV epicardium')
     args = parser.parse_args()

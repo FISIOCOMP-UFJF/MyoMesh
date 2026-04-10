@@ -22,7 +22,6 @@ ROIEntry = namedtuple('ROIEntry', ['name', 'z', 'points'])
 def readScar_roi(mat_filename):
     """
     Lê o setstruct.Roi (cicatriz clássica) e retorna lista de ROIEntry.
-    (Código baseado na sua versão original.)
     """
     print(f"[ROI] Reading ROIs from: {mat_filename}")
     data = loadmat(mat_filename, struct_as_record=False, squeeze_me=True)
@@ -31,13 +30,11 @@ def readScar_roi(mat_filename):
     entries = []
 
     for idx, roi in enumerate(roi_cell):
-        # Nome da ROI
         name = getattr(roi, 'Name', f'ROI-{idx+1}')
         if isinstance(name, np.ndarray):
             name = name[0] if name.size > 0 else f'ROI-{idx+1}'
         name = str(name)
 
-        # Coordenadas
         X = getattr(roi, 'X', [])
         Y = getattr(roi, 'Y', [])
         Z = getattr(roi, 'Z', [])
@@ -59,10 +56,6 @@ def readScar_roi(mat_filename):
 
 
 def group_by_slice(entries):
-    """
-    Recebe lista de ROIEntry e retorna:
-      { z: { roi_name: [ (x,y), ... ], ... }, ... }
-    """
     fatias = defaultdict(lambda: defaultdict(list))
     for e in entries:
         fatias[e.z][e.name].extend(e.points)
@@ -70,18 +63,16 @@ def group_by_slice(entries):
 
 
 def save_fatias_to_txt(fatias, shifts_x_file, shifts_y_file, output_dir):
-    """
-    Aplica shifts X/Y por fatia e salva "slice_<z>.txt"
-    com "x_aligned y_aligned z".
-    (Versão original adaptada.)
-    """
     os.makedirs(output_dir, exist_ok=True)
     shifts_x = np.loadtxt(shifts_x_file)
     shifts_y = np.loadtxt(shifts_y_file)
 
     for z, roi_map in sorted(fatias.items()):
-        sx = shifts_x[z] if 0 <= z < len(shifts_x) else 0
-        sy = shifts_y[z] if 0 <= z < len(shifts_y) else 0
+        # Se z for 1-based (Matlab), o índice do array é z-1
+        idx_shift = z - 1
+        sx = shifts_x[idx_shift] if 0 <= idx_shift < len(shifts_x) else 0
+        sy = shifts_y[idx_shift] if 0 <= idx_shift < len(shifts_y) else 0
+        
         fname = os.path.join(output_dir, f"slice_{z}.txt")
         with open(fname, 'w') as f:
             for pts in roi_map.values():
@@ -91,11 +82,6 @@ def save_fatias_to_txt(fatias, shifts_x_file, shifts_y_file, output_dir):
 
 
 def save_rois_extruded_to_txt(fatias, mat_filename, output_dir, num_layers=1):
-    """
-    Usa SliceThickness, SliceGap, ResolutionX/Y do setstruct
-    e extruda cada ROI de z_base até z_top em 'num_layers' camadas.
-    (Essa é a sua extrusão original, por ROI.)
-    """
     data = loadmat(mat_filename)
     ss = data['setstruct']
     slice_thickness = float(ss['SliceThickness'][0][0][0][0])
@@ -124,7 +110,7 @@ def save_rois_extruded_to_txt(fatias, mat_filename, output_dir, num_layers=1):
 
 
 # ============================================================
-# GreyZone.map → GZ/Core
+# GreyZone.map -> GZ/Core
 # ============================================================
 
 def load_gz_map_and_metadata(mat_path):
@@ -150,11 +136,22 @@ def load_gz_map_and_metadata(mat_path):
     if lbl.ndim != 3:
         raise ValueError(f"Esperava (H, W, S) para GreyZone.map, obtive ndim={lbl.ndim}")
 
+    # =========================================================
+    # Transpose (Troca X <-> Y)
+    # =========================================================
+    print("[INFO] Aplicando Transpose na matriz GreyZone (Correção Geométrica)")
+    lbl = np.transpose(lbl, (1, 0, 2))
+
     try:
         slice_thickness = float(ss["SliceThickness"])
         slice_gap       = float(ss["SliceGap"])
-        resolution_x    = float(ss["ResolutionX"])
-        resolution_y    = float(ss["ResolutionY"])
+        
+        # Como transpomos a imagem, trocamos as resoluções também
+        res_x_raw    = float(ss["ResolutionX"])
+        res_y_raw    = float(ss["ResolutionY"])
+        resolution_x = res_y_raw
+        resolution_y = res_x_raw
+        
     except Exception as e:
         raise RuntimeError(
             "Problema ao ler SliceThickness/SliceGap/ResolutionX/ResolutionY em setstruct."
@@ -164,43 +161,123 @@ def load_gz_map_and_metadata(mat_path):
     return lbl, resolution_x, resolution_y, dz
 
 
-def extract_contours_all_slices(lbl, value, dx=1.0, dy=1.0, invert_y=False):
-    """
-    lbl: (H, W, S) labels
-    value: rótulo alvo (1 = Greyzone, 2 = Core)
-    dx, dy: espaçamento mm/pixel
-    Retorna: lista de tamanho S; cada item é lista de polígonos (N,2) em (x_mm, y_mm)
-    """
+def extract_contours_all_slices(
+    lbl,
+    value,
+    dx=1.0,
+    dy=1.0,
+    shifts_x=None,
+    shifts_y=None,
+    invert_y=False,
+):
     H, W, S = lbl.shape
+
+    sx_arr = np.asarray(shifts_x) if shifts_x is not None else None
+    sy_arr = np.asarray(shifts_y) if shifts_y is not None else None
+
     all_slices = []
     for s in range(S):
         mask = (lbl[:, :, s] == value).astype(float)
         cs = find_contours(mask, level=0.5)
         polys = []
+
+        sx = sx_arr[s] if sx_arr is not None and 0 <= s < len(sx_arr) else 0.0
+        sy = sy_arr[s] if sy_arr is not None and 0 <= s < len(sy_arr) else 0.0
+        #sx = 0
+        #sy = 0
+        
         for c in cs:
-            y, x = c[:, 0], c[:, 1]
-            X = x * dx
-            Y = (H - 1 - y) * dy if invert_y else y * dy
+            # Mantem y=c[:,0] e x=c[:,1]
+            # Isso garante que a geometria não fique espelhada.
+            y_raw, x_raw = c[:, 0], c[:, 1]
+
+            # ============================================================
+            # Ajuste
+            # ============================================================
+            y = y_raw + 1
+            x = x_raw + 1
+            # ============================================================
+            
+            x_corr = x - sx
+            y_corr = y - sy
+
+            X = x_corr * dx
+            Y = (H - 1 - y_corr) * dy if invert_y else y_corr * dy
+
             polys.append(np.column_stack([X, Y]))
         all_slices.append(polys)
     return all_slices
 
+def align_fibrosis_txts_to_lvendo(output_path, patient_id, rois_dir):
+    """
+    Alinha todos os TXT de fibrose (rois_extruded/roi_*.txt) ao LVEndo.
+    (Essa função é mantida, mas não será chamada se decidirmos usar --no-align)
+    """
+
+    lv_txt = os.path.join(output_path, "patientTxt", f"{patient_id}-LVEndo.txt")
+    if not os.path.exists(lv_txt):
+        print(f"[ALIGN] LVEndo txt '{lv_txt}' não encontrado. Pulando alinhamento XY.")
+        return
+
+    try:
+        lv_pts = np.loadtxt(lv_txt)
+        if lv_pts.ndim == 1:
+            lv_pts = lv_pts[None, :]
+        c_lv = lv_pts[:, :2].mean(axis=0)
+    except Exception as e:
+        print(f"[ALIGN] Erro ao ler LVEndo '{lv_txt}': {e}")
+        return
+
+    fib_files = sorted(glob.glob(os.path.join(rois_dir, "roi_*.txt")))
+    if not fib_files:
+        print(f"[ALIGN] Nenhum TXT de fibrose encontrado em '{rois_dir}'.")
+        return
+
+    fib_pts_list = []
+    for fpath in fib_files:
+        try:
+            arr = np.loadtxt(fpath)
+            if arr.ndim == 1:
+                arr = arr[None, :]
+            fib_pts_list.append(arr[:, :2])
+        except Exception as e:
+            print(f"[ALIGN] Aviso: não consegui ler '{fpath}': {e}")
+
+    if not fib_pts_list:
+        print("[ALIGN] Não foi possível montar pontos de fibrose para alinhamento.")
+        return
+
+    fib_pts = np.vstack(fib_pts_list)
+    c_fib = fib_pts.mean(axis=0)
+
+    delta_xy = c_lv - c_fib
+    print(f"[ALIGN] Centróide LVEndo XY = {c_lv}")
+    print(f"[ALIGN] Centróide fibrose XY = {c_fib}")
+    print(f"[ALIGN] delta_xy (LVEndo - fibrose) = {delta_xy}")
+
+    for fpath in fib_files:
+        try:
+            arr = np.loadtxt(fpath)
+            if arr.ndim == 1:
+                arr = arr[None, :]
+
+            arr[:, 0] += delta_xy[0]
+            arr[:, 1] += delta_xy[1]
+
+            np.savetxt(fpath, arr, fmt="%.6f")
+            print(f"[ALIGN] delta_xy aplicado em '{fpath}'")
+        except Exception as e:
+            print(f"[ALIGN] Erro ao aplicar delta_xy em '{fpath}': {e}")
 
 def save_region_extruded_txts(polys_per_slice, dz, out_dir, region_name,
-                              num_layers=1, z_offset=0.0):
+                              num_layers=1, z_offset=0.0,
+                              invert_z=False, z_min=None, z_max=None):
     """
-    Gera um arquivo .txt POR REGIÃO (polígono) em cada fatia.
-
-    polys_per_slice: lista de tamanho S; cada item é lista de polígonos (N,2), em mm
-    dz            : espaçamento entre fatias (mm)
-    out_dir       : diretório onde salvar os .txt
-    region_name   : nome curto da região, ex.: "greyzone" ou "core"
-    num_layers    : número de camadas entre z_base e z_top (>=1)
-    z_offset      : deslocamento absoluto em Z (mm)
-
-    Saída:
-      roi_<region_name>_sSSS_cCCC.txt
+    ...docstring original...
     """
+    if invert_z and (z_min is None or z_max is None):
+        raise ValueError("invert_z=True requer z_min e z_max.")
+
     os.makedirs(out_dir, exist_ok=True)
     txt_paths = []
 
@@ -210,6 +287,10 @@ def save_region_extruded_txts(polys_per_slice, dz, out_dir, region_name,
 
         z_base = z_offset + s * dz
         z_top  = z_base + dz
+
+        # Aplica inversão se solicitado
+        if invert_z:
+            z_base, z_top = z_min + z_max - z_top, z_min + z_max - z_base
 
         for c_idx, poly in enumerate(polys):
             if poly.size == 0:
@@ -238,16 +319,7 @@ def save_region_extruded_txts(polys_per_slice, dz, out_dir, region_name,
     return txt_paths
 
 
-# ============================================================
-# Geração de superfícies PLY/STL (usado por ambos os modos)
-# ============================================================
-
 def generate_surfaces_and_stl(patient_id, rois_dir, ply_dir, stl_dir):
-    """
-    Para cada arquivo *.txt em rois_dir:
-      1) makeSurface.py -> .ply
-      2) PlyToStl       -> .stl
-    """
     os.makedirs(ply_dir, exist_ok=True)
     os.makedirs(stl_dir, exist_ok=True)
 
@@ -287,7 +359,7 @@ def generate_surfaces_and_stl(patient_id, rois_dir, ply_dir, stl_dir):
 
 
 # ============================================================
-# msh_tag_to_ply (usado no execAll.py)
+# msh_tag_to_ply
 # ============================================================
 
 def msh_tag_to_ply(msh_path, tag=2, ply_path="fibrose_surface.ply"):
@@ -296,7 +368,9 @@ def msh_tag_to_ply(msh_path, tag=2, ply_path="fibrose_surface.ply"):
     extrai os elementos com a tag especificada e
     salva a superfície correspondente em um .ply ASCII.
     """
-    msh_path, ply_path = Path(msh_path), Path(ply_path)
+    msh_path = Path(msh_path)
+    ply_path = Path(ply_path)
+
     msh = meshio.read(msh_path)
 
     all_t, all_tags = [], []
@@ -304,12 +378,13 @@ def msh_tag_to_ply(msh_path, tag=2, ply_path="fibrose_surface.ply"):
         if cb.type == "tetra":
             all_t.append(cb.data)
             all_tags.append(msh.cell_data["gmsh:physical"][i])
+
     if not all_t:
         raise ValueError("Sem tetraedros no .msh.")
 
     tets = np.vstack(all_t)
     tags = np.concatenate(all_tags)
-    mask = tags == tag
+    mask = (tags == tag)
     if not np.any(mask):
         warnings.warn(f"Nenhum tetra com tag {tag}.")
         return None
@@ -335,20 +410,15 @@ def msh_tag_to_ply(msh_path, tag=2, ply_path="fibrose_surface.ply"):
     print(f"[PLY] salvo (ASCII): {ply_path}")
     return surf
 
-
-# ============================================================
-# MAIN com --mode roi / --mode greyzone
-# ============================================================
-
 def main():
     parser = argparse.ArgumentParser(
         description="Extrai cicatriz a partir do .mat (ROI ou GreyZone) e gera STL para marcar fibrose."
     )
     parser.add_argument("matfile", help="Caminho para o .mat alinhado (saída do readMat)")
     parser.add_argument("--shiftx", default=None,
-                        help="Caminho para endo_shifts_x.txt (usado em modo roi)")
+                        help="Caminho para endo_shifts_x.txt (usado em modo roi/greyzone)")
     parser.add_argument("--shifty", default=None,
-                        help="Caminho para endo_shifts_y.txt (usado em modo roi)")
+                        help="Caminho para endo_shifts_y.txt (usado em modo roi/greyzone)")
     parser.add_argument("--output_path", required=True,
                         help="Pasta base do paciente (a mesma usada no execAll.py)")
     parser.add_argument("--patient_id", required=True,
@@ -359,10 +429,10 @@ def main():
         default="roi",
         help="roi = usa setstruct.Roi; greyzone = usa Scar/GreyZone.map"
     )
+    parser.add_argument("--no_invert_z", action="store_true", help="Desativa a inversão do eixo Z (por padrão Z é espelhado no centro de [z_min, z_max]).")
 
     args = parser.parse_args()
 
-    # Diretórios de saída (iguais para os dois modos)
     rois_dir = os.path.join(args.output_path, "rois_extruded")
     ply_dir  = os.path.join(args.output_path, "scarPly_raw")
     stl_dir  = os.path.join(args.output_path, "scarSTL_raw")
@@ -375,16 +445,12 @@ def main():
         entries = readScar_roi(args.matfile)
         fatias = group_by_slice(entries)
 
-        # Alinhamento em XY usando shifts do endo
         if args.shiftx is None or args.shifty is None:
             raise RuntimeError("Modo roi requer --shiftx e --shifty.")
         slices_dir = os.path.join(args.output_path, "slices")
         save_fatias_to_txt(fatias, args.shiftx, args.shifty, slices_dir)
 
-        # Extrusão usando metadados do setstruct
         save_rois_extruded_to_txt(fatias, args.matfile, output_dir=rois_dir)
-
-        # Geração de superfícies e STL
         generate_surfaces_and_stl(args.patient_id, rois_dir, ply_dir, stl_dir)
 
     else:
@@ -396,20 +462,62 @@ def main():
         print(f"Dimensões do mapa: {lbl.shape} (H, W, S)")
         print(f"ResolutionX={res_x} mm/pixel, ResolutionY={res_y} mm/pixel, dz={dz} mm")
 
-        gz_slices   = extract_contours_all_slices(lbl, value=1, dx=res_x, dy=res_y, invert_y=False)
-        core_slices = extract_contours_all_slices(lbl, value=2, dx=res_x, dy=res_y, invert_y=False)
+        data_check = loadmat(args.matfile, simplify_cells=True)
+        epi_x = np.array(data_check["setstruct"]["EpiX"])
+        if epi_x.ndim == 3:
+            num_slices_malha = epi_x.shape[2]
+        elif epi_x.ndim == 2:
+            num_slices_malha = epi_x.shape[1]
+        else:
+            num_slices_malha = -1
+
+        print(f"[DIAG] Fatias na segmentação (EpiX): {num_slices_malha}")
+        print(f"[DIAG] Fatias no mapa GreyZone:      {lbl.shape[2]}")
+
+        if lbl.shape[2] != num_slices_malha:
+            print("[AVISO] Número de fatias DIVERGE — Z da fibrose pode estar desalinhado!")
+        else:
+            print("[OK] Número de fatias coincide.")
+
+
+        shifts_x = np.loadtxt(args.shiftx) if args.shiftx is not None else None
+        shifts_y = np.loadtxt(args.shifty) if args.shifty is not None else None
+
+        gz_slices = extract_contours_all_slices(
+            lbl, value=1,
+            dx=res_x, dy=res_y,
+            shifts_x=shifts_x, shifts_y=shifts_y,
+            invert_y=False
+        )
+        core_slices = extract_contours_all_slices(
+            lbl, value=2,
+            dx=res_x, dy=res_y,
+            shifts_x=shifts_x, shifts_y=shifts_y,
+            invert_y=False
+        )
 
         z_offset = 1.0 * dz
-        print(f"[GZ] Usando z_offset fixo = {z_offset} (mesmas unidades de dz do Segment).")
+        print(f"[GZ] Usando z_offset = {z_offset} com correção de shifts por fatia.")
 
-        _ = save_region_extruded_txts(
-            gz_slices,   dz, rois_dir, region_name="greyzone",
-            num_layers=1, z_offset=z_offset
-        )
-        _ = save_region_extruded_txts(
-            core_slices, dz, rois_dir, region_name="core",
-            num_layers=1, z_offset=z_offset
-        )
+        S = lbl.shape[2]
+        # z_min/z_max baseados nos valid_indices da malha (igual ao saveMsh)
+        if epi_x.ndim == 3:
+            valid_mask = ~np.isnan(epi_x[:, 0, :]).all(axis=0)
+        else:
+            valid_mask = ~np.isnan(epi_x).all(axis=0)
+        valid_indices = np.where(valid_mask)[0]
+
+        z_min = (valid_indices[0]  + 1) * dz
+        z_max = (valid_indices[-1] + 1) * dz
+
+        invert_z = not args.no_invert_z
+        if invert_z:
+            print(f"[invert_z] Espelhando Z em torno do centro de [{z_min:.4f}, {z_max:.4f}] mm")
+
+        _ = save_region_extruded_txts(gz_slices,   dz, rois_dir, "greyzone", 1, z_offset,
+                                      invert_z=invert_z, z_min=z_min, z_max=z_max)
+        _ = save_region_extruded_txts(core_slices, dz, rois_dir, "core",     1, z_offset,
+                                      invert_z=invert_z, z_min=z_min, z_max=z_max)
 
         generate_surfaces_and_stl(args.patient_id, rois_dir, ply_dir, stl_dir)
 
