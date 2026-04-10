@@ -380,9 +380,9 @@ if __name__ == "__main__":
     parser.add_argument("-i", "--input_file", required=True, help="Full path to the input .mat file")
     parser.add_argument('-r', '--resolution', type=int, default=1000, help='Discretization resolution for the mesh')
 
-    parser.add_argument('-dx', type=float, default=0.25, help='dx')
-    parser.add_argument('-dy', type=float, default=0.25, help='dy')
-    parser.add_argument('-dz', type=float, default=0.25, help='dz')
+    parser.add_argument('-dx', type=float, default=0.5, help='dx')
+    parser.add_argument('-dy', type=float, default=0.5, help='dy')
+    parser.add_argument('-dz', type=float, default=0.5, help='dz')
 
     parser.add_argument('--relaxation', type=float, default=0.05, help='Relaxation factor for scar/fibrosis surface smoothing')
     parser.add_argument('--iterations', type=int, default=200, help='Number of iterations for scar/fibrosis surface smoothing')
