@@ -388,7 +388,7 @@ if __name__ == "__main__":
     parser.add_argument('--iterations', type=int, default=200, help='Number of iterations for scar/fibrosis surface smoothing')
 
     parser.add_argument('--mesh_relaxation', type=float, default=0.02, help='Relaxation factor for cardiac surface smoothing (RVEndo, LVEpi, LVEndo)')
-    parser.add_argument('--mesh_iterations', type=int, default=200, help='Number of iterations for cardiac surface smoothing (RVEndo, LVEpi, LVEndo)')
+    parser.add_argument('--mesh_iterations', type=int, default=40, help='Number of iterations for cardiac surface smoothing (RVEndo, LVEpi, LVEndo)')
 
     parser.add_argument('--cl_max', type=float, default=2.0, help='Gmsh CharacteristicLengthMax: maximum element size in the mesh')
     parser.add_argument('--cl_min', type=float, default=1.0, help='Gmsh CharacteristicLengthMin: minimum element size in the mesh')

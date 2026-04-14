@@ -246,7 +246,7 @@ All steps are orchestrated automatically. Outputs are saved to `output/YYYYMMDD_
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `--mesh_relaxation` | Laplacian relaxation factor for cardiac surfaces | `0.02` |
-| `--mesh_iterations` | Laplacian smoothing iterations for cardiac surfaces | `200` |
+| `--mesh_iterations` | Laplacian smoothing iterations for cardiac surfaces | `40` |
 | `--relaxation` | Laplacian relaxation factor for fibrosis surfaces | `0.05` |
 | `--iterations` | Laplacian smoothing iterations for fibrosis surfaces | `200` |
 
