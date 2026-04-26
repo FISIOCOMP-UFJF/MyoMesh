@@ -59,6 +59,14 @@ After activating the environment, run:
 bash config.sh
 ```
 
+or
+
+```sh
+sh config.sh
+```
+
+> **Shell compatibility:** `bash config.sh` works on most systems. If it fails (common on Fedora and other distributions where `bash` spawns a non-interactive subshell that does not inherit the Conda environment), use `sh config.sh` instead. The difference is in how each distribution's shell inherits the active Conda session.
+
 This will:
 
 - Clone and build the `hexa-mesh-from-VTK` project.
@@ -70,10 +78,10 @@ This will:
 
 - `-i`: Path to the file with heart meshes.
 - `-r`: Discretization resolution in conversion to alg. Default value is 1000.
-- `-dx`, `-dy`, and `-dz`: Refer to the discretization for the `.vtu`. Default value is 0.25.
-- `--iterations`: Number of smoothing iterations applied to the scar/fibrosis surfaces (core and grayzone). Default value is 200.
+- `-dx`, `-dy`, and `-dz`: Refer to the discretization for the `.vtu`. Default value is 0.50.
+- `--iterations`: Number of smoothing iterations applied to the scar/fibrosis surfaces (core and greyzone). Default value is 200.
 - `--relaxation`: Relaxation factor controlling smoothing aggressiveness of the scar/fibrosis surfaces. Default value is 0.05.
-- `--mesh_iterations`: Number of smoothing iterations applied to the cardiac surfaces (RVEndo, LVEpi, LVEndo). Default value is 200.
+- `--mesh_iterations`: Number of smoothing iterations applied to the cardiac surfaces (RVEndo, LVEpi, LVEndo). Default value is 40.
 - `--mesh_relaxation`: Relaxation factor for cardiac surface smoothing. Default value is 0.02.
 - `--cl_max`: Gmsh maximum element size (`CharacteristicLengthMax`). Default value is 2.0.
 - `--cl_min`: Gmsh minimum element size (`CharacteristicLengthMin`). Default value is 1.0.
@@ -124,7 +132,7 @@ Runs the full pipeline. If the `.mat` file has no ROI or GreyZone data, scar mar
 python3 execAll.py -i ./Patient_1.mat
 ```
 
-The pipeline automatically detects ROI or GreyZone data in the `.mat` file and runs the full scar marking workflow (core + grayzone segmentation, smoothing, and tagging).
+The pipeline automatically detects ROI or GreyZone data in the `.mat` file and runs the full scar marking workflow (core + greyzone segmentation, smoothing, and tagging).
 
 ---
 
@@ -132,7 +140,7 @@ The pipeline automatically detects ROI or GreyZone data in the `.mat` file and r
 
 ```sh
 python3 execAll.py -i ./Patient_1.mat \
-  -dx 0.25 -dy 0.25 -dz 0.25 -r 1000 \
+  -dx 0.50 -dy 0.50 -dz 0.50 -r 1000 \
   --cl_max 2.0 --cl_min 1.0 \
   --alpha_endo_lv 60 --alpha_epi_lv -60 \
   --alpha_endo_sept 60 --alpha_epi_sept -60 \
@@ -155,6 +163,8 @@ python3 execAll.py -i ./Patient_1.mat --no_invert_z
 bash rodaPacientes.sh
 ```
 
+or `sh rodaPacientes.sh` — see the Configuration section for notes on `bash` vs `sh` compatibility.
+
 Runs `execAll.py` sequentially for each `.mat` file listed in the script.
 
 ---
@@ -163,7 +173,7 @@ Runs `execAll.py` sequentially for each `.mat` file listed in the script.
 
 ```sh
 python3 execAll.py -i ./Patient_1.mat \
-  -dx 0.25 -dy 0.25 -dz 0.25 -r 1000 \
+  -dx 0.50 -dy 0.50 -dz 0.50 -r 1000 \
   --iterations 200 --relaxation 0.05 \
   --mesh_iterations 200 --mesh_relaxation 0.02 \
   --cl_max 2.0 --cl_min 1.0 \

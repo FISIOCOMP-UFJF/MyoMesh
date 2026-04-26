@@ -222,6 +222,7 @@ def execute_commands(input_file):
         flagScar = False
 
     if flagScar:
+        scar_mode = "greyzone" if has_gz else "roi"
         logging.info("Extracting scars from the .mat file...")
         logging.info("===================================================")
         try:
@@ -231,7 +232,7 @@ def execute_commands(input_file):
                 f"--shifty {output_dir}/endo_shifts_y.txt "
                 f"--output_path {output_dir} "
                 f"--patient_id {patient_id} "
-                f"--mode greyzone "
+                f"--mode {scar_mode} "
                 f"{invert_z_flag}"
             )
             subprocess.run(read_scar_command, shell=True, check=True)

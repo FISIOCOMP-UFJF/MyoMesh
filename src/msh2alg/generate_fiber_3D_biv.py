@@ -34,7 +34,7 @@ def solve_laplace(mesh, boundary_markers, boundary_values, ldrb_markers):
 
     return u
 
-def solve_laplace_grayzone(mesh, tecido_fn):
+def solve_laplace_greyzone(mesh, tecido_fn):
 
     V  = df.FunctionSpace(mesh, "P",  1)
     V0 = df.FunctionSpace(mesh, "DG", 0)
@@ -194,7 +194,7 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
     # NOVO: criar tecido único (0=saudável, 1=core, 2=greyzone)
     # a partir do .msh marcado em pathMesh
     # =====================================================
-    print("Lendo tags de fibrose do .msh para criar TECDIO (0 saudavel, 1 core, 2 greyzone)…")
+    print("Lendo tags de fibrose do .msh para criar TECIDO (0 saudavel, 1 core, 2 greyzone)…")
     gmsh_mesh = meshio.read(pathMesh)
 
     tetra_index = None
@@ -237,13 +237,13 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
     # =====================================================
 
     # =====================================================
-    # NOVO: Resolver laplace na grayzone
+    # NOVO: Resolver laplace na greyzone
     # =====================================================
     V0 = tecido_fn.function_space()
     has_greyzone = np.any(tecido_fn.vector().get_local() == 2.0)
 
     if has_greyzone:
-        peso_tecido = solve_laplace_grayzone(mesh, tecido_fn)
+        peso_tecido = solve_laplace_greyzone(mesh, tecido_fn)
         peso_tecido = df.project(peso_tecido, V0)
         peso_arr = peso_tecido.vector().get_local()
         peso_arr[peso_arr > 1.0] = 1.0
@@ -280,7 +280,7 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
         xdmf.write(tecido_fn, 0)
         xdmf.write(u, 0)
         xdmf.write(region_id, 0)   # <- gravando região sem erro
-        xdmf.write(peso_tecido, 0) # NOVO: Add grayzone resolvida com Laplace 
+        xdmf.write(peso_tecido, 0) # NOVO: Add greyzone resolvida com Laplace
 
     convert_xdmf_to_vtu(meshname)
 
