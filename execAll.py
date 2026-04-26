@@ -394,8 +394,8 @@ if __name__ == "__main__":
     parser.add_argument('--cl_min', type=float, default=1.0, help='Gmsh CharacteristicLengthMin: minimum element size in the mesh')
 
     parser.add_argument('--no_invert_z', action='store_true', help='Disable Z-axis flip (by default Z is mirrored at the center of [z_min, z_max]).')
-    parser.add_argument('--alpha_endo_lv', type=float, default=60, help='Fiber angle on the LV endocardium')
-    parser.add_argument('--alpha_epi_lv', type=float, default=-60, help='Fiber angle on the LV epicardium')
+    parser.add_argument('--alpha_endo_lv', type=float, default=30, help='Fiber angle on the LV endocardium')
+    parser.add_argument('--alpha_epi_lv', type=float, default=-30, help='Fiber angle on the LV epicardium')
     parser.add_argument('--beta_endo_lv', type=float, default=0, help='Sheet angle on the LV endocardium')
     parser.add_argument('--beta_epi_lv', type=float, default=0, help='Sheet angle on the LV epicardium')
 
@@ -404,8 +404,8 @@ if __name__ == "__main__":
     parser.add_argument('--beta_endo_sept', type=float, default=0, help='Sheet angle on the Septum endocardium')
     parser.add_argument('--beta_epi_sept', type=float, default=0, help='Sheet angle on the Septum epicardium')
 
-    parser.add_argument('--alpha_endo_rv', type=float, default=60, help='Fiber angle on the RV endocardium')
-    parser.add_argument('--alpha_epi_rv', type=float, default=-60, help='Fiber angle on the RV epicardium')
+    parser.add_argument('--alpha_endo_rv', type=float, default=80, help='Fiber angle on the RV endocardium')
+    parser.add_argument('--alpha_epi_rv', type=float, default=-80, help='Fiber angle on the RV epicardium')
     parser.add_argument('--beta_endo_rv', type=float, default=0, help='Sheet angle on the RV endocardium')
     parser.add_argument('--beta_epi_rv', type=float, default=0, help='Sheet angle on the RV epicardium')
     args = parser.parse_args()
