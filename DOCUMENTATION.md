@@ -461,6 +461,7 @@ Gmsh geometry script defining the biventricular mesh topology. Specifies compoun
 - Laplace problems are solved with FEniCS 2019.1.0 (GMRES + AMG). Mesh size and element quality directly affect solver convergence.
 - Reducing `--cl_max` produces a finer tetrahedral mesh and more accurate fiber gradients, at higher computational cost.
 - The `--no_invert_z` flag is patient-specific: some MRI acquisitions store slices base-to-apex, others apex-to-base. Check the output geometry in ParaView if the mesh appears inverted.
+- **Surface smoothing and self-intersections:** Low values of `--mesh_iterations` or `--mesh_relaxation` may produce self-intersecting STL surfaces, especially near the apex and RV insertion points, causing Gmsh to fail or generate a degenerate mesh. Increasing `--mesh_iterations` to 200 typically resolves this. However, excessive smoothing on patients with fibrosis may displace cardiac surface boundaries away from the scar region, compromising volumetric fibrosis marking accuracy. A value between 40 (default) and 200 should be chosen based on visual inspection of the output geometry.
 
 ---
 
