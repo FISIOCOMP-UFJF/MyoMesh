@@ -22,4 +22,4 @@ dependencies:
   - tbb-devel 
   - expat
   - pip
-  - skimage
+  - scikit-image
