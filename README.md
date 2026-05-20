@@ -192,6 +192,7 @@ python3 execAll.py -i ./Patient_1.mat \
 - No additional system packages are required if you install via the provided Conda environment.
 - Gmsh binary is already included and used by the pipeline.
 - The `hexa-mesh-from-VTK` project will be cloned and compiled automatically during `config.sh`.
+- **Surface smoothing and self-intersections:** Low `--mesh_iterations` or `--mesh_relaxation` values may cause self-intersecting surfaces, leading to Gmsh failure or a degenerate mesh. Increasing `--mesh_iterations` to 200 typically resolves this. For patients with fibrosis, excessive smoothing may displace surface boundaries and compromise fibrosis marking accuracy — a value between 40 (default) and 200 is recommended based on visual inspection.
 
 ## How to cite
 

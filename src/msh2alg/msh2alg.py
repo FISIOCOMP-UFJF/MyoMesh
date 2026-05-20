@@ -5,6 +5,7 @@ from src.msh2alg.generate_fiber_3D_biv import *
 import subprocess
 
 def run_command_live(cmd_list, cwd=None):
+    """Executa um subprocesso imprimindo a saída em tempo real, com formatação especial para linhas de progresso."""
     process = subprocess.Popen(
         cmd_list,
         stdout=subprocess.PIPE,
@@ -25,6 +26,7 @@ def run_command_live(cmd_list, cwd=None):
         raise subprocess.CalledProcessError(process.returncode, cmd_list)
     
 def convert_msh_to_xml(pathMesh, meshname):
+    """Converte a malha Gmsh (.msh) para o formato XML do FEniCS usando dolfin-convert."""
     # Command to run dolfin-convert and convert the .msh mesh to .xml
     command = f"dolfin-convert {pathMesh} {meshname}.xml"
     os.system(command)
@@ -44,6 +46,11 @@ def run_msh2alg(
     alpha_endo_rv=80, alpha_epi_rv=-80, beta_endo_rv=0, beta_epi_rv=0,
     log_file=None
 ):
+    """
+    Converte a malha .msh para XML (FEniCS), calcula fibras cardíacas com LDRB,
+    exporta para VTU/XDMF e finaliza com a conversão para ALG e opcionalmente CARP.
+    Os ângulos alpha (fibra) e beta (lâmina) são configuráveis por região (LV, septo, RV).
+    """
     #print(carp)
     # --- ESPELHA O .MSH ANTES DE CONVERTER PARA XML ---
     mir_msh = os.path.splitext(pathMesh)[0] + "_mirX.msh"

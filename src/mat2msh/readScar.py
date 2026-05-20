@@ -21,7 +21,8 @@ ROIEntry = namedtuple('ROIEntry', ['name', 'z', 'points'])
 
 def readScar_roi(mat_filename):
     """
-    Lê o setstruct.Roi (cicatriz clássica) e retorna lista de ROIEntry.
+    Lê as ROIs de cicatriz (setstruct.Roi) do arquivo .mat do Segment
+    e retorna uma lista de ROIEntry com nome, fatia Z e coordenadas XY.
     """
     print(f"[ROI] Reading ROIs from: {mat_filename}")
     data = loadmat(mat_filename, struct_as_record=False, squeeze_me=True)
@@ -56,6 +57,7 @@ def readScar_roi(mat_filename):
 
 
 def group_by_slice(entries):
+    """Agrupa as ROIEntry por índice de fatia Z e por nome da ROI."""
     fatias = defaultdict(lambda: defaultdict(list))
     for e in entries:
         fatias[e.z][e.name].extend(e.points)
@@ -63,6 +65,10 @@ def group_by_slice(entries):
 
 
 def save_fatias_to_txt(fatias, shifts_x_file, shifts_y_file, output_dir):
+    """
+    Salva os pontos de cada fatia em arquivos .txt, aplicando os deslocamentos
+    de alinhamento calculados pelo readMat para corrigir a posição XY da cicatriz.
+    """
     os.makedirs(output_dir, exist_ok=True)
     shifts_x = np.loadtxt(shifts_x_file)
     shifts_y = np.loadtxt(shifts_y_file)
@@ -82,6 +88,11 @@ def save_fatias_to_txt(fatias, shifts_x_file, shifts_y_file, output_dir):
 
 
 def save_rois_extruded_to_txt(fatias, mat_filename, output_dir, num_layers=1):
+    """
+    Extrusão das ROIs 2D em 3D: replica cada contorno de cicatriz em múltiplas
+    camadas ao longo do eixo Z (entre z_base e z_top da fatia), gerando um
+    volume extrudado que será transformado em superfície STL.
+    """
     data = loadmat(mat_filename)
     ss = data['setstruct']
     slice_thickness = float(ss['SliceThickness'][0][0][0][0])
@@ -115,10 +126,9 @@ def save_rois_extruded_to_txt(fatias, mat_filename, output_dir, num_layers=1):
 
 def load_gz_map_and_metadata(mat_path):
     """
-    Lê o arquivo .mat (Segment) e retorna:
-      - lbl: (H, W, S) com rótulos (0=bg, 1=GZ, 2=Core)
-      - resolution_x, resolution_y (mm/pixel)
-      - dz (mm) = SliceThickness + SliceGap
+    Lê o mapa GreyZone do arquivo .mat e retorna o array de rótulos (H, W, S)
+    com 0=background, 1=grey zone, 2=core, junto com os metadados de resolução.
+    Aplica transpose (troca X↔Y) para corrigir a orientação da imagem Segment.
     """
     md = loadmat(mat_path, simplify_cells=True)
 
@@ -170,6 +180,11 @@ def extract_contours_all_slices(
     shifts_y=None,
     invert_y=False,
 ):
+    """
+    Extrai os contornos de uma região (definida por 'value') em todas as fatias
+    do mapa de rótulos, escala para mm e aplica os deslocamentos de alinhamento.
+    Retorna uma lista de polígonos por fatia.
+    """
     H, W, S = lbl.shape
 
     sx_arr = np.asarray(shifts_x) if shifts_x is not None else None
@@ -320,6 +335,10 @@ def save_region_extruded_txts(polys_per_slice, dz, out_dir, region_name,
 
 
 def generate_surfaces_and_stl(patient_id, rois_dir, ply_dir, stl_dir):
+    """
+    Para cada arquivo .txt de contorno extrudado, gera a superfície PLY via makeSurface.py
+    e converte para STL via PlyToStl, produzindo as superfícies de fibrose suavizadas.
+    """
     os.makedirs(ply_dir, exist_ok=True)
     os.makedirs(stl_dir, exist_ok=True)
 

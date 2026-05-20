@@ -58,6 +58,11 @@ def add_greyzone_shell(tetra, tags, core_tag=2, grey_tag=3):
 
 
 def mark_fibrosis(path_msh, stl_dir, output_path="saida_com_fibrose.msh", plot_centroids=False):
+    """
+    Marca os tetraedros da malha volumétrica como core (tag=2) ou greyzone (tag=3)
+    verificando se cada tetraedro (centroides e nós) está dentro de alguma superfície STL
+    de fibrose. Após a marcação, adiciona uma casca de greyzone ao redor do core.
+    """
     # Reads the original .msh
     mesh      = meshio.read(path_msh)
     points    = mesh.points  # (N_pts, 3)

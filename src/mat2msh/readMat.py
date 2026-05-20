@@ -3,13 +3,19 @@ from scipy.io import loadmat, savemat
 from sklearn.linear_model import LinearRegression
 import os
 
-def readMat(mat_filename, RVyes=False, output_dir="."):
+def readMat(mat_filename, RVyes=False, output_dir=".", no_regression=False):
+    """
+    Lê o arquivo .mat do Segment, alinha as fatias LV (e opcionalmente RV)
+    usando regressão linear dos baricentros, e salva o .mat corrigido junto
+    com os deslocamentos de alinhamento em arquivos .txt.
+    """
     print(f"Reading file: {mat_filename}")
     data = loadmat(mat_filename, struct_as_record=False, squeeze_me=True)
     setstruct = data['setstruct']
     print("Data structure loaded successfully.")
 
     def get_coordinates(field):
+        """Extrai um campo de coordenadas do setstruct e garante shape 3D (pontos, tempo, fatias)."""
         #print(f"Extracting coordinates for: {field}")
         coords = getattr(setstruct, field, None)
         if coords is None:
@@ -29,6 +35,7 @@ def readMat(mat_filename, RVyes=False, output_dir="."):
 
     # Calculate Z based on SliceThickness and SliceGap
     def calculate_z(num_slices, slice_thickness, slice_gap, num_points_per_slice):
+        """Gera coordenadas Z igualmente espaçadas por SliceThickness, replicadas para cada ponto da fatia."""
         z_values = np.arange(num_slices) * (slice_thickness)
         return np.tile(z_values, (num_points_per_slice, 1))
 
@@ -61,6 +68,11 @@ def readMat(mat_filename, RVyes=False, output_dir="."):
         return barycenters
 
     def align_slices(X, Y, barycenters, z_values):
+        """
+        Alinha as fatias removendo o desvio lateral de cada baricentro em relação
+        à linha de tendência linear (regressão sobre Z), corrigindo o movimento
+        do paciente entre aquisições.
+        """
         #Align slices based on linear regression of barycenters
         num_slices_here = X.shape[2]
         #print(f"Aligning {num_slices_here} slices...")
@@ -93,15 +105,22 @@ def readMat(mat_filename, RVyes=False, output_dir="."):
 
     # Calculate barycenters and align Endo and Epi
     endo_barycenters = calculate_barycenters(endoX, endoY, epiX, epiY)
-    endoX, endoY, endo_shifts_x, endo_shifts_y = align_slices(
-        endoX, endoY, endo_barycenters, EndoZ
-    )
-    epiX, epiY, epi_shifts_x, epi_shifts_y = align_slices(
-        epiX, epiY, endo_barycenters, EpiZ
-    )
+
+    if no_regression:
+        print("Regression alignment disabled (--no_regression).")
+        endo_shifts_x = np.zeros(num_slices)
+        endo_shifts_y = np.zeros(num_slices)
+        epi_shifts_x  = np.zeros(num_slices)
+        epi_shifts_y  = np.zeros(num_slices)
+    else:
+        endoX, endoY, endo_shifts_x, endo_shifts_y = align_slices(
+            endoX, endoY, endo_barycenters, EndoZ
+        )
+        epiX, epiY, epi_shifts_x, epi_shifts_y = align_slices(
+            epiX, epiY, endo_barycenters, EpiZ
+        )
 
     if RVyes:
-        # Align RV
         RVEndoX = get_coordinates('RVEndoX')
         RVEndoY = get_coordinates('RVEndoY')
         RVEpiX = get_coordinates('RVEpiX')
@@ -112,16 +131,17 @@ def readMat(mat_filename, RVyes=False, output_dir="."):
 
         rv_barycenters = calculate_barycenters(RVEndoX, RVEndoY, RVEpiX, RVEpiY)
 
-        # Align RV Endo
-        RVEndoX, RVEndoY, rv_endo_shifts_x, rv_endo_shifts_y = align_slices(
-            RVEndoX, RVEndoY, rv_barycenters, RVEndoZ
-        )
-        # Align RV Epi
-        RVEpiX, RVEpiY, rv_epi_shifts_x, rv_epi_shifts_y = align_slices(
-            RVEpiX, RVEpiY, rv_barycenters, RVEpiZ
-        )
+        if no_regression:
+            rv_endo_shifts_x = rv_endo_shifts_y = np.zeros(num_slices)
+            rv_epi_shifts_x  = rv_epi_shifts_y  = np.zeros(num_slices)
+        else:
+            RVEndoX, RVEndoY, rv_endo_shifts_x, rv_endo_shifts_y = align_slices(
+                RVEndoX, RVEndoY, rv_barycenters, RVEndoZ
+            )
+            RVEpiX, RVEpiY, rv_epi_shifts_x, rv_epi_shifts_y = align_slices(
+                RVEpiX, RVEpiY, rv_barycenters, RVEpiZ
+            )
 
-        # Update setstruct with aligned RV coordinates
         setstruct.RVEndoX = RVEndoX
         setstruct.RVEndoY = RVEndoY
         setstruct.RVEpiX  = RVEpiX

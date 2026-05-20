@@ -277,7 +277,7 @@ if __name__ == "__main__":
     # Invert coordinates
     invert_z = False
     invert_x = False
-    intert_y = True
+    intert_y = False
 
     user_input = {
         "print_ply": True,

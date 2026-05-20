@@ -6,16 +6,11 @@ from scipy.io import loadmat
 
 def adjust_resolution(setstruct, structures):
     """
-    Adjusts the coordinates of the structures to account for spatial resolution (ResolutionX, ResolutionY).
-    Calculates Z values based on SliceThickness and SliceGap.
+    Escala as coordenadas X e Y das estruturas pelo espaçamento real do pixel (ResolutionX/Y),
+    convertendo de pixels para milímetros. Também identifica as fatias com dados válidos
+    (não-NaN) para evitar exportar fatias vazias.
 
-    Parameters:
-    - setstruct: Object containing the structures and resolution attributes.
-    - structures: Dictionary with structures to be adjusted.
-
-    Returns:
-    - Adjusted setstruct with new scaled coordinates.
-    - Indices of valid slices where at least one structure has valid data.
+    Retorna o setstruct com coordenadas escaladas e os índices das fatias válidas.
     """
     resolution_x = getattr(setstruct, 'ResolutionX', 1.0)
     resolution_y = getattr(setstruct, 'ResolutionY', 1.0)
@@ -94,13 +89,10 @@ def adjust_resolution(setstruct, structures):
 
 def save_structures_to_txt(mat_filename, output_dir, invert_z=False):
     """
-    Saves the coordinates of structures (LVEndo, LVEpi, RVEndo, RVEpi) to unique .txt files,
-    containing all slices for each structure in MATLAB format.
-
-    Parameters:
-    - mat_filename: Path to the .mat file.
-    - output_dir: Directory where the files will be saved.
-    - invert_z: If True, mirrors Z around the center of [z_min, z_max].
+    Exporta as coordenadas 3D de LVEndo, LVEpi, RVEndo e RVEpi para arquivos .txt,
+    um por estrutura, com todos os pontos de todas as fatias válidas.
+    Se invert_z=True, espelha o eixo Z em torno do centro do intervalo [z_min, z_max]
+    para corrigir a orientação da imagem MRI (superior → inferior vira inferior → superior).
     """
     # Create an output directory based on the current date
     output_path = output_dir
