@@ -5,9 +5,9 @@ import os
 
 def readMat(mat_filename, RVyes=False, output_dir=".", no_regression=False):
     """
-    Lê o arquivo .mat do Segment, alinha as fatias LV (e opcionalmente RV)
-    usando regressão linear dos baricentros, e salva o .mat corrigido junto
-    com os deslocamentos de alinhamento em arquivos .txt.
+    Reads the Segment .mat file, aligns LV (and optionally RV) slices using
+    linear regression on barycenters, and saves the corrected .mat together
+    with per-slice alignment shifts as .txt files.
     """
     print(f"Reading file: {mat_filename}")
     data = loadmat(mat_filename, struct_as_record=False, squeeze_me=True)
@@ -15,7 +15,7 @@ def readMat(mat_filename, RVyes=False, output_dir=".", no_regression=False):
     print("Data structure loaded successfully.")
 
     def get_coordinates(field):
-        """Extrai um campo de coordenadas do setstruct e garante shape 3D (pontos, tempo, fatias)."""
+        """Extracts a coordinate field from setstruct and ensures a 3-D shape (points, time, slices)."""
         #print(f"Extracting coordinates for: {field}")
         coords = getattr(setstruct, field, None)
         if coords is None:
@@ -35,7 +35,7 @@ def readMat(mat_filename, RVyes=False, output_dir=".", no_regression=False):
 
     # Calculate Z based on SliceThickness and SliceGap
     def calculate_z(num_slices, slice_thickness, slice_gap, num_points_per_slice):
-        """Gera coordenadas Z igualmente espaçadas por SliceThickness, replicadas para cada ponto da fatia."""
+        """Generates Z coordinates evenly spaced by SliceThickness, tiled for every point in the slice."""
         z_values = np.arange(num_slices) * (slice_thickness)
         return np.tile(z_values, (num_points_per_slice, 1))
 
@@ -69,9 +69,9 @@ def readMat(mat_filename, RVyes=False, output_dir=".", no_regression=False):
 
     def align_slices(X, Y, barycenters, z_values):
         """
-        Alinha as fatias removendo o desvio lateral de cada baricentro em relação
-        à linha de tendência linear (regressão sobre Z), corrigindo o movimento
-        do paciente entre aquisições.
+        Aligns slices by subtracting the lateral deviation of each barycenter
+        from the linear trend (regression over Z), correcting for inter-slice
+        patient motion.
         """
         #Align slices based on linear regression of barycenters
         num_slices_here = X.shape[2]

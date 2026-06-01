@@ -55,11 +55,10 @@ def writeplyfile(writefile, tet_nodes, tet_tot):
 
 def align_contour_phase(ring_ref, ring_next):
     """
-    Encontra o melhor ponto de início para ring_next que minimiza
-    a distância total para ring_ref.
-    
-    Ambos os anéis devem ter o mesmo número de pontos (já reamostrados).
-    Retorna ring_next reordenado.
+    Finds the starting offset for ring_next that minimises total distance to ring_ref.
+
+    Both rings must have the same number of points (already resampled).
+    Returns ring_next reordered at the best offset.
     """
     n = len(ring_ref)
     best_shift = 0
@@ -79,10 +78,10 @@ def align_contour_phase(ring_ref, ring_next):
 
 def resample_ring(ring, n):
     """
-    Reamostrar um anel de pontos para ter exatamente n pontos,
-    usando interpolação linear ao longo do perímetro.
+    Resamples a ring of points to exactly n points using linear
+    interpolation along the perimeter arc length.
     """
-    # Fecha o anel para interpolação
+    # Close the ring before interpolation
     closed = np.vstack([ring, ring[0]])
     
     # Calcula distâncias acumuladas
@@ -106,10 +105,10 @@ def resample_ring(ring, n):
 
 def align_all_slices(points, n_per_slice, n_slices):
     """
-    Alinha a fase de todos os anéis em relação ao anel anterior,
-    minimizando a distância total entre pontos correspondentes.
-    
-    Retorna o array de pontos com os anéis reordenados.
+    Aligns the phase of every ring relative to the previous one,
+    minimising total distance between corresponding points.
+
+    Returns the point array with rings reordered.
     """
     aligned = points.copy()
     
@@ -306,7 +305,7 @@ if __name__ == "__main__":
 
     principal_axis = user_input["principal_axis"]
 
-    # Descobrir n_per_slice e n_slices
+    # Infer n_per_slice and n_slices from repeated Z values
     slice_position_test = points[0, principal_axis]
     n_per_slice = np.sum(points[:, principal_axis] == slice_position_test)
     n_slices = int(len(points) / n_per_slice)
@@ -315,7 +314,7 @@ if __name__ == "__main__":
         print("Error: Inconsistent number of points per slice.")
         sys.exit(1)
 
-    # Se só uma fatia, replica abaixo
+    # A single slice cannot form a surface; replicate it shifted by slice_thickness
     if n_slices == 1:
         print("Detected a single slice. Replicating below using 'slice_thickness'...")
         new_points, patch = replicate_single_slice_below(
@@ -329,14 +328,11 @@ if __name__ == "__main__":
     else:
         patch = {"height": n_slices, "width": n_per_slice}
 
-    # -------------------------------------------------------
-    # ALINHAMENTO DE FASE ENTRE FATIAS (correção principal)
-    # -------------------------------------------------------
+    # Phase-align consecutive rings so the lateral surface has no diagonal twists
     print(f"Aligning contour phases across {n_slices} slices...")
     points = align_all_slices(points, n_per_slice, n_slices)
     print("Phase alignment done.")
 
-    # Cria conectividade triangular
     tris = make_triangle_connection(patch)
 
     if cover_both:
@@ -347,7 +343,7 @@ if __name__ == "__main__":
         nodes_final = points
         tris_final = tris
 
-    # Remove triângulos degenerados
+    # Remove degenerate triangles (zero-area faces)
     normals = calculate_normals(nodes_final, tris_final.astype(int))
     err_tol = 1e-6
 
@@ -373,7 +369,6 @@ if __name__ == "__main__":
                 tris_final_temp[i] = new_indices[indice_i]
     tris_final = tris_final_temp.reshape(tris_final.shape)
 
-    # Salva .ply
     if user_input["print_ply"]:
         print(f"Saving .ply file to {filename_output}")
         writeplyfile(filename_output, nodes_final, tris_final + 1)

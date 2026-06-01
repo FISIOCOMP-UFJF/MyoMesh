@@ -72,12 +72,11 @@ def gmsh2carp(gmshMesh, outputMesh,
 
     num_nodes = int(f.readline().strip())
 
-    # Começa a escrever o .pts
     fpts = open(ptsFile, 'w')
     fpts.write(f"{num_nodes}\n")
 
     vpts   = np.zeros((num_nodes,3))
-    id2idx = {}  # mapa Gmsh node ID -> índice 0-based usado no .pts
+    id2idx = {}  # Gmsh node ID -> 0-based index used in .pts
 
     for i in range(num_nodes):
         parts = f.readline().split()
@@ -113,11 +112,11 @@ def gmsh2carp(gmshMesh, outputMesh,
     line = f.readline()  # num_elements
 
     num_elements = int(line)   
-    elements = 0              # contador dos tipos suportados exportados (aqui: só TET)
-    nodes = []                # legado (não usado na escrita, mantido p/ debug)
-    elem_types   = []         # tipo por elemento (após filtro -> só 4)
-    elem_nodes   = []         # tupla de IDs Gmsh por elemento (após filtro)
-    elem_regions = []         # região (1º tag ou 1)
+    elements = 0              # count of exported elements (TET only)
+    nodes = []                # legacy list (not written; kept for debug)
+    elem_types   = []         # element type after filter (always 4 = tetra)
+    elem_nodes   = []         # Gmsh node ID tuple per element (after filter)
+    elem_regions = []         # region tag (first tag, or 1 if absent)
 
     for i in range(num_elements):
         parts = f.readline().split()
@@ -129,7 +128,7 @@ def gmsh2carp(gmshMesh, outputMesh,
         for j in range(num_tags):
             tags.append(int(parts[3+j]))
         region = tags[0] if tags else 1
-        off = 3 + num_tags #sempre começa em 3 no original, então coloquei off=3+num_tags
+        off = 3 + num_tags  # node data starts right after the tag list
 
         # Mantém APENAS tetraedros
         if elem_type == 4:  # tetra
@@ -233,7 +232,7 @@ def gmsh2carp(gmshMesh, outputMesh,
 
     ffib.close()
     if misses:
-        print(f" [gmsh2carp] Aviso: {misses} tetra(s) sem match de fibra; identidade usada.")
+        print(f" [gmsh2carp] Warning: {misses} tetra(s) with no fiber match; using identity.")
 
     # ---- escrever .lon (apenas fibra, 1 por TET) ----
     with open(lonFile, "w") as flon:

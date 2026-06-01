@@ -13,7 +13,6 @@
 - [Parameter Reference](#parameter-reference)
 - [Examples](#examples)
 - [Output Structure](#output-structure)
-- [Batch Processing](#batch-processing)
 - [Module Descriptions](#module-descriptions)
 - [Notes](#notes)
 - [References](#references)
@@ -90,7 +89,8 @@ Patient_X.mat  (2D MRI segmentations)
       │
       ▼
 [8] msh2alg.py
-      Mirrors mesh in X (anatomical convention).
+      Reformats MSH (read→write as Gmsh v2 ASCII via mirror_msh_x; the
+      X-mirror itself is currently disabled — no geometric change).
       Converts MSH → XML using dolfin-convert (FEniCS).
       │
       ▼
@@ -263,9 +263,11 @@ All steps are orchestrated automatically. Outputs are saved to `output/YYYYMMDD_
 
 ### Geometry
 
-| Parameter         | Description                                                                                                                                                                           | Default  |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| `--no_invert_z` | Disable Z-axis mirroring. By default Z is reflected around the center of `[z_min, z_max]` to match anatomical orientation. Pass this flag to preserve the original MRI slice order. | disabled |
+| Parameter           | Description                                                                                                                                                                           | Default  |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| `--no_invert_z`   | Disable Z-axis mirroring. By default Z is reflected around the center of `[z_min, z_max]` to match anatomical orientation. Pass this flag to preserve the original MRI slice order. | disabled |
+| `--no_align_dicom` | Disable DICOM coordinate alignment. By default all surfaces are mapped to the patient's DICOM space using `ImagePosition`/`ImageOrientation` from the `.mat` file. When alignment is active, `--no_regression` is forced automatically (per-slice shifts break the rigid transform). | disabled |
+| `--no_regression` | Disable per-slice barycenter regression in `readMat.py`. Automatically forced when DICOM alignment is active.                                                                         | disabled |
 
 ### Fiber Angles (LDRB)
 
@@ -322,6 +324,18 @@ python3 execAll.py -i ./Patient_1.mat \
 
 ```sh
 python3 execAll.py -i ./Patient_1.mat --no_invert_z
+```
+
+**Disable DICOM alignment (enabled by default):**
+
+```sh
+python3 execAll.py -i ./Patient_1.mat --no_align_dicom
+```
+
+**Mesh + fibers only, skip hexahedral conversion (VTU is still produced):**
+
+```sh
+python3 execAll.py -i ./Patient_1.mat --no_alg
 ```
 
 **Full run with all parameters explicit:**
@@ -391,18 +405,6 @@ output/
 
 ---
 
-## Batch Processing
-
-Edit `rodaPacientes.sh` to list the patient `.mat` file paths, then:
-
-```sh
-bash rodaPacientes.sh
-```
-
-> See the [Configuration](#configuration) section for notes on `bash` vs `sh` compatibility.
-
-Each patient is processed sequentially. Stdout and stderr are captured per patient. A `summary.log` is written with the status of each execution.
-
 ---
 
 ## Module Descriptions
@@ -442,7 +444,7 @@ Core scientific module. Reads the FEniCS XML mesh, identifies boundary surfaces 
 
 ### `src/msh2alg/msh2alg.py`
 
-Orchestrates the tetrahedral-to-hexahedral conversion: mirrors the mesh, converts from `.msh` to `.xml` with `dolfin-convert`, calls `generate_fiber_3D_biv.request_functions()` to assign fibers, then runs `HexaMeshFromVTK` to resample onto the hexahedral grid.
+Orchestrates the tetrahedral-to-hexahedral conversion: reformats the mesh via `mirror_msh_x` (the X-mirror is currently disabled, so this only rewrites as Gmsh v2 ASCII for `dolfin-convert`), converts from `.msh` to `.xml`, calls `generate_fiber_3D_biv.request_functions()` to assign fibers, then runs `HexaMeshFromVTK` to resample onto the hexahedral grid.
 
 ### `src/msh2alg/msh2carp.py`
 
@@ -461,6 +463,8 @@ Gmsh geometry script defining the biventricular mesh topology. Specifies compoun
 - Laplace problems are solved with FEniCS 2019.1.0 (GMRES + AMG). Mesh size and element quality directly affect solver convergence.
 - Reducing `--cl_max` produces a finer tetrahedral mesh and more accurate fiber gradients, at higher computational cost.
 - The `--no_invert_z` flag is patient-specific: some MRI acquisitions store slices base-to-apex, others apex-to-base. Check the output geometry in ParaView if the mesh appears inverted.
+- **DICOM alignment (enabled by default):** The pipeline maps all surfaces to the patient's DICOM coordinate space using `ImagePosition` and `ImageOrientation` extracted from the `.mat` file. To keep the pipeline's internal frame, pass `--no_align_dicom`. Because per-slice barycenter regression breaks the rigid relationship to DICOM space, `--no_regression` is forced automatically when alignment is active.
+- **`--no_alg` still produces VTU:** Passing `--no_alg` skips only the final hexahedral resampling (`HexaMeshFromVTK`). The FEniCS fiber-assignment step still runs and outputs `.vtu`, `.xdmf`, and `.pts/.elem/.lon` files.
 - **Surface smoothing and self-intersections:** Low values of `--mesh_iterations` or `--mesh_relaxation` may produce self-intersecting STL surfaces, especially near the apex and RV insertion points, causing Gmsh to fail or generate a degenerate mesh. Increasing `--mesh_iterations` to 200 typically resolves this. However, excessive smoothing on patients with fibrosis may displace cardiac surface boundaries away from the scar region, compromising volumetric fibrosis marking accuracy. A value between 40 (default) and 200 should be chosen based on visual inspection of the output geometry.
 
 ---

@@ -113,9 +113,9 @@ def execute_commands(input_file):
     # Flag --no_invert_z para propagar aos subcomandos (por padrão inverte Z)
     invert_z_flag = "--no_invert_z" if args.no_invert_z else ""
 
-    # --align_dicom força --no_regression (regressão quebra a relação rígida com o DICOM)
-    if args.align_dicom and not args.no_regression:
-        logging.info("[align_dicom] Forçando --no_regression (obrigatório para alinhamento DICOM).")
+    # DICOM alignment forces --no_regression: per-slice shifts break the rigid pipeline→DICOM relation
+    if not args.no_align_dicom and not args.no_regression:
+        logging.info("[align_dicom] Forcing --no_regression (required for DICOM alignment).")
         args.no_regression = True
 
     # Step 1: Process the .mat file
@@ -198,9 +198,14 @@ def execute_commands(input_file):
     logging.info(f"STL files generated successfully in: {stl_srf}")
     logging.info("===================================================")
 
-    # Step 4b: Alinhar STLs cardíacos ao espaço DICOM (opcional)
+    lv_endo = f"{stl_srf}/{patient_id}-LVEndo.stl"
+    rv_endo = f"{stl_srf}/{patient_id}-RVEndo.stl"
+    rv_epi  = f"{stl_srf}/{patient_id}-RVEpi.stl"
+    lv_epi  = f"{stl_srf}/{patient_id}-LVEpi.stl"
+
+    # Step 4b: Align cardiac STLs to DICOM patient space (enabled by default)
     R_dicom = t_dicom = None
-    if args.align_dicom:
+    if not args.no_align_dicom:
         logging.info("===================================================")
         logging.info("Applying DICOM alignment to cardiac STLs...")
         R_dicom, t_dicom, rms = compute_dicom_transform(input_file)
@@ -213,11 +218,6 @@ def execute_commands(input_file):
     # Step 5: Generate the .msh file using Gmsh
     gmsh = "./scripts/gmsh-2.13.1/bin/gmsh"
     biv_mesh_geo = "./scripts/biv_mesh.geo"
-
-    lv_endo = f"{stl_srf}/{patient_id}-LVEndo.stl"
-    rv_endo = f"{stl_srf}/{patient_id}-RVEndo.stl"
-    rv_epi = f"{stl_srf}/{patient_id}-RVEpi.stl"
-    lv_epi = f"{stl_srf}/{patient_id}-LVEpi.stl"
 
     out_log = f"{log_dir}/{patient_id}_gmsh.log"
 
@@ -271,7 +271,7 @@ def execute_commands(input_file):
             logging.error(f"Error executing readScar.py: {e}")
             return
 
-        if args.align_dicom and R_dicom is not None:
+        if not args.no_align_dicom and R_dicom is not None:
             scar_stls = glob.glob(f"{scar_srf}/*.stl")
             for stl_path in scar_stls:
                 apply_transform_to_file(stl_path, R_dicom, t_dicom)
@@ -366,34 +366,36 @@ def execute_commands(input_file):
     logging.info(f"Surfaces saved in: {surfaces_output_dir}")
     logging.info("===================================================")
 
-    if args.no_alg:
-        logging.info("Skipping ALG conversion (--no_alg flag set).")
-    else:
-        try:
-            hexa_log = f"{log_dir}/{patient_id}_hexa.log"
-            msh2alg_command = (
-                f"PYTHONPATH=. python3 ./src/msh2alg/msh2alg.py "
-                f"-i {marked_msh_path} "
-                f"-o {mesh_output_base} "
-                f"--carp {carp_output} "
-                f"--alg {alg_output} "
-                f"-r {args.resolution} "
-                f"--dx {args.dx} --dy {args.dy} --dz {args.dz} "
-                f"--alpha_endo_lv {args.alpha_endo_lv} --alpha_epi_lv {args.alpha_epi_lv} "
-                f"--beta_endo_lv {args.beta_endo_lv} --beta_epi_lv {args.beta_epi_lv} "
-                f"--alpha_endo_sept {args.alpha_endo_sept} --alpha_epi_sept {args.alpha_epi_sept} "
-                f"--beta_endo_sept {args.beta_endo_sept} --beta_epi_sept {args.beta_epi_sept} "
-                f"--alpha_endo_rv {args.alpha_endo_rv} --alpha_epi_rv {args.alpha_epi_rv} "
-                f"--beta_endo_rv {args.beta_endo_rv} --beta_epi_rv {args.beta_epi_rv} "
-                f"--log_file {hexa_log}"
-            )
-            subprocess.run(msh2alg_command, shell=True, check=True)
+    try:
+        hexa_log = f"{log_dir}/{patient_id}_hexa.log"
+        no_hexa_flag = "--no_hexa" if args.no_alg else ""
+        msh2alg_command = (
+            f"PYTHONPATH=. python3 ./src/msh2alg/msh2alg.py "
+            f"-i {marked_msh_path} "
+            f"-o {mesh_output_base} "
+            f"--carp {carp_output} "
+            f"--alg {alg_output} "
+            f"-r {args.resolution} "
+            f"--dx {args.dx} --dy {args.dy} --dz {args.dz} "
+            f"--alpha_endo_lv {args.alpha_endo_lv} --alpha_epi_lv {args.alpha_epi_lv} "
+            f"--beta_endo_lv {args.beta_endo_lv} --beta_epi_lv {args.beta_epi_lv} "
+            f"--alpha_endo_sept {args.alpha_endo_sept} --alpha_epi_sept {args.alpha_epi_sept} "
+            f"--beta_endo_sept {args.beta_endo_sept} --beta_epi_sept {args.beta_epi_sept} "
+            f"--alpha_endo_rv {args.alpha_endo_rv} --alpha_epi_rv {args.alpha_epi_rv} "
+            f"--beta_endo_rv {args.beta_endo_rv} --beta_epi_rv {args.beta_epi_rv} "
+            f"--log_file {hexa_log} "
+            f"{no_hexa_flag}"
+        )
+        subprocess.run(msh2alg_command, shell=True, check=True)
+        if args.no_alg:
+            logging.info("FEniCS/VTU done. ALG conversion skipped (--no_alg).")
+        else:
             logging.info("===================================================")
             logging.info("Mesh successfully converted to ALG format.")
             logging.info("===================================================")
-        except subprocess.CalledProcessError as e:
-            logging.error(f"Error converting msh to alg: {e}")
-            return
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Error converting msh to alg: {e}")
+        return
 
     logging.info("========================================================================================")
     logging.info("                         Finished processing the patient data.")
@@ -437,7 +439,7 @@ if __name__ == "__main__":
     parser.add_argument('--no_invert_z', action='store_true', help='Disable Z-axis flip (by default Z is mirrored at the center of [z_min, z_max]).')
     parser.add_argument('--no_regression', action='store_true', help='Disable slice alignment by linear regression of barycenters in readMat. Preserves original DICOM pixel coordinates.')
     parser.add_argument('--no_alg', action='store_true', help='Skip ALG/CARP conversion step (msh2alg). Useful for fast mesh inspection.')
-    parser.add_argument('--align_dicom', action='store_true', help='Align the mesh to DICOM patient space. Computes R, t from ImagePosition/Orientation in the .mat and applies to all STL surfaces before Gmsh. Forces --no_regression. All outputs (mesh, VTU, fibers) will be in DICOM coordinates.')
+    parser.add_argument('--no_align_dicom', action='store_true', help='Disable DICOM alignment (by default the mesh is aligned to patient DICOM space using ImagePosition/Orientation from the .mat).')
     parser.add_argument('--alpha_endo_lv', type=float, default=30, help='Fiber angle on the LV endocardium')
     parser.add_argument('--alpha_epi_lv', type=float, default=-30, help='Fiber angle on the LV epicardium')
     parser.add_argument('--beta_endo_lv', type=float, default=0, help='Sheet angle on the LV endocardium')

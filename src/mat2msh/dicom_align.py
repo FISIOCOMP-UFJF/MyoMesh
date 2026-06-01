@@ -1,28 +1,27 @@
 """
-Alinhamento da malha do pipeline ao espaço de coordenadas DICOM do paciente.
+Aligns the pipeline mesh to the patient's DICOM coordinate space.
 
-A geometria necessária (ImagePosition, ImageOrientation, resolução, espessura)
-vem inteiramente do .mat do Segment — os mesmos valores que estão nos DICOMs
-brutos (validado: diff=0 em todos os campos). Por isso só o .mat é necessário.
+The required geometry (ImagePosition, ImageOrientation, resolution, thickness)
+comes entirely from the Segment .mat file — identical values to the raw DICOMs
+(validated: diff=0 for all fields). Only the .mat is needed.
 
-A transformação rígida (R, t) é calculada uma vez e aplicada a qualquer arquivo
-de superfície/malha que o pipeline gere (STL, PLY, MSH), levando-o do frame
-interno do pipeline para o espaço DICOM real (mm).
+The rigid transform (R, t) is computed once and applied to any surface/mesh file
+produced by the pipeline (STL, PLY, MSH), mapping it from the pipeline's internal
+frame to the real DICOM patient space (mm).
 
-Flips fixos do pipeline considerados no cálculo:
-  - makeSurface.py NÃO nega mais Y (intert_y = False) -> frame right-handed
-  - saveMsh.py espelha Z no centro de [z_min, z_max] (invert_z=True por padrão)
+Pipeline flips accounted for in the transform:
+  - makeSurface.py no longer negates Y (intert_y = False) -> right-handed frame
+  - saveMsh.py mirrors Z around the midpoint of [z_min, z_max] (invert_z=True by default)
 
-Observação: o cálculo de R, t exige que a regressão de baricentros (readMat.py)
-esteja DESLIGADA, pois ela aplica deslocamentos por fatia que quebram a relação
-rígida entre o frame do pipeline e o espaço DICOM. Por isso --align_dicom força
---no_regression no execAll.py.
+Note: computing R, t requires that barycenter regression (readMat.py) is DISABLED,
+because per-slice shifts break the rigid relationship between the pipeline frame and
+DICOM space. Therefore --align_dicom forces --no_regression in execAll.py.
 
-Correção (2026-05-20): a equação pixel→mundo estava com px↔py trocados.
-O Segment usa convenção MATLAB (EndoX = índice de linha, EndoY = índice de coluna),
-então px deve multiplicar v_coluna e py deve multiplicar v_linha.
-Validado com tools/diagnostico_pixel_mundo.py: intensidade mediana no torso
-passa de 168.7 (errado) para 192.5 (correto). Ver ALINHAMENTO_DICOM.md.
+Fix (2026-05-20): the pixel->world equation had px and py swapped.
+Segment uses MATLAB convention (EndoX = row index, EndoY = column index), so
+px must multiply v_coluna and py must multiply v_linha.
+Validated with tools/diagnostico_pixel_mundo.py: median torso intensity goes from
+168.7 (wrong) to 192.5 (correct). See ALINHAMENTO_DICOM.md.
 """
 
 import os
@@ -32,7 +31,7 @@ from scipy.io import loadmat
 
 
 def ler_geometria(mat_path):
-    """Lê ImagePosition, ImageOrientation e escalas do .mat do Segment."""
+    """Reads ImagePosition, ImageOrientation and pixel scales from the Segment .mat file."""
     s = loadmat(mat_path, simplify_cells=True)["setstruct"]
     ori = np.asarray(s["ImageOrientation"], dtype=float).flatten()
     v_linha  = ori[:3] / np.linalg.norm(ori[:3])

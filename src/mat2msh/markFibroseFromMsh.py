@@ -9,15 +9,15 @@ import matplotlib.pyplot as plt
 
 def add_greyzone_shell(tetra, tags, core_tag=2, grey_tag=3):
     """
-    Garante que todo tetra core (tag=core_tag) tenha vizinhos imediatos
-    (por face) marcados como greyzone (tag=grey_tag), sem sobrescrever core.
+    Ensures every core tetra (tag=core_tag) has its immediate face-neighbours
+    marked as greyzone (tag=grey_tag), without overwriting existing core labels.
 
-    tetra: array (n_tetra, 4) com índices de nós
-    tags:  array (n_tetra,) com as tags gmsh:physical já marcadas
+    tetra: (n_tetra, 4) array of node indices
+    tags:  (n_tetra,) array of gmsh:physical tags already assigned
     """
     n_tets = tetra.shape[0]
 
-    # faces locais do tetra: combinações de 3 vértices
+    # Local face index combinations for each tetrahedron (4 faces of 3 vertices)
     faces_local = np.array([[0, 1, 2],
                             [0, 1, 3],
                             [0, 2, 3],
@@ -59,9 +59,9 @@ def add_greyzone_shell(tetra, tags, core_tag=2, grey_tag=3):
 
 def mark_fibrosis(path_msh, stl_dir, output_path="saida_com_fibrose.msh", plot_centroids=False):
     """
-    Marca os tetraedros da malha volumétrica como core (tag=2) ou greyzone (tag=3)
-    verificando se cada tetraedro (centroides e nós) está dentro de alguma superfície STL
-    de fibrose. Após a marcação, adiciona uma casca de greyzone ao redor do core.
+    Tags tetrahedral elements of the volumetric mesh as core (tag=2) or greyzone (tag=3)
+    by testing whether each tetrahedron (centroid and nodes) lies inside any fibrosis
+    STL surface. After tagging, adds a greyzone shell around core elements.
     """
     # Reads the original .msh
     mesh      = meshio.read(path_msh)
@@ -76,7 +76,7 @@ def mark_fibrosis(path_msh, stl_dir, output_path="saida_com_fibrose.msh", plot_c
             tetra_index = i
             break
     if tetra_index is None:
-        raise RuntimeError("Nenhum elemento 'tetra' encontrado no .msh.")
+        raise RuntimeError("No 'tetra' elements found in the .msh file.")
 
     tetra = cells[tetra_index].data  # array shape = (n_tetra, 4)
     tags = cell_data["gmsh:physical"][tetra_index]  # shape = (n_tetra,)
@@ -180,7 +180,7 @@ def mark_fibrosis(path_msh, stl_dir, output_path="saida_com_fibrose.msh", plot_c
             mask_border = tet_to_mark & (tags_new != 2)
             tags_new[mask_border] = 3
 
-    # Pós passo: garante “casca” de greyzone em volta do core
+    # Post-pass: guarantee a greyzone shell around every core element
     tags_new = add_greyzone_shell(tetra, tags_new, core_tag=2, grey_tag=3)
 
     # Rewrites the mesh with updated tags
