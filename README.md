@@ -86,6 +86,9 @@ This will:
 - `--cl_max`: Gmsh maximum element size (`CharacteristicLengthMax`). Default value is 2.0.
 - `--cl_min`: Gmsh minimum element size (`CharacteristicLengthMin`). Default value is 1.0.
 - `--no_invert_z`: Disable Z-axis flip. By default, Z is mirrored at the center of [z_min, z_max]. Pass this flag to keep the original Z orientation.
+- `--no_align_dicom`: Disable DICOM coordinate alignment. By default the pipeline aligns all surfaces to the patient's DICOM space using `ImagePosition`/`ImageOrientation` from the `.mat` file. Pass this flag to keep the pipeline's internal coordinate frame. Note: enabling alignment forces `--no_regression` automatically.
+- `--no_regression`: Disable per-slice barycenter regression. Forced automatically when DICOM alignment is active.
+- `--no_alg`: Skip hexahedral (ALG/CARP) conversion. The FEniCS/fiber step still runs and produces `.vtu` and `.pts/.elem/.lon` — only the final `HexaMeshFromVTK` step is skipped.
 - `--alpha_endo_lv`: Fiber angle on the left ventricle (LV) endocardium. Default value is 30°.
 - `--alpha_epi_lv`: Fiber angle on the left ventricle (LV) epicardium. Default value is -30°.
 - `--beta_endo_lv`: Sheet angle on the left ventricle (LV) endocardium. Default value is 0°.
@@ -157,15 +160,19 @@ python3 execAll.py -i ./Patient_1.mat --no_invert_z
 
 ---
 
-**Batch processing multiple patients:**
+**Disable DICOM alignment (enabled by default):**
 
 ```sh
-bash rodaPacientes.sh
+python3 execAll.py -i ./Patient_1.mat --no_align_dicom
 ```
 
-or `sh rodaPacientes.sh` — see the Configuration section for notes on `bash` vs `sh` compatibility.
+---
 
-Runs `execAll.py` sequentially for each `.mat` file listed in the script.
+**Mesh + fibers only, skip hexahedral conversion (VTU is still produced):**
+
+```sh
+python3 execAll.py -i ./Patient_1.mat --no_alg
+```
 
 ---
 
@@ -192,6 +199,7 @@ python3 execAll.py -i ./Patient_1.mat \
 - No additional system packages are required if you install via the provided Conda environment.
 - Gmsh binary is already included and used by the pipeline.
 - The `hexa-mesh-from-VTK` project will be cloned and compiled automatically during `config.sh`.
+- **Surface smoothing and self-intersections:** Low `--mesh_iterations` or `--mesh_relaxation` values may cause self-intersecting surfaces, leading to Gmsh failure or a degenerate mesh. Increasing `--mesh_iterations` to 200 typically resolves this. For patients with fibrosis, excessive smoothing may displace surface boundaries and compromise fibrosis marking accuracy — a value between 40 (default) and 200 is recommended based on visual inspection.
 
 ## How to cite
 

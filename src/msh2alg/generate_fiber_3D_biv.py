@@ -8,6 +8,11 @@ from .msh2carp import gmsh2carp
 
 
 def solve_laplace(mesh, boundary_markers, boundary_values, ldrb_markers):
+    """
+    Solves the Laplace problem (∇²u = 0) with Dirichlet boundary conditions on
+    the RV, LV, and epicardial surfaces. Used to generate the scalar fields that
+    drive the cardiac fiber orientation (LDRB algorithm).
+    """
     V = df.FunctionSpace(mesh, 'P', 1)
 
     u_rv, u_lv, u_epi = boundary_values
@@ -35,7 +40,11 @@ def solve_laplace(mesh, boundary_markers, boundary_values, ldrb_markers):
     return u
 
 def solve_laplace_greyzone(mesh, tecido_fn):
-
+    """
+    Solves Laplace in the grey-zone region to interpolate conductivity between
+    core (u=0) and healthy tissue (u=1), producing a smooth weight field for the ALG.
+    Boundary conditions are placed on faces shared between core and healthy/greyzone cells.
+    """
     V  = df.FunctionSpace(mesh, "P",  1)
     V0 = df.FunctionSpace(mesh, "DG", 0)
 
@@ -77,11 +86,16 @@ def solve_laplace_greyzone(mesh, tecido_fn):
 
     return u_sol
     
-def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alpha_epi_lv, aux_beta_endo_lv, 
-                    aux_beta_epi_lv, aux_alpha_endo_sept, aux_alpha_epi_sept, 
-                    aux_beta_endo_sept, aux_beta_epi_sept, aux_alpha_endo_rv, 
+def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alpha_epi_lv, aux_beta_endo_lv,
+                    aux_beta_epi_lv, aux_alpha_endo_sept, aux_alpha_epi_sept,
+                    aux_beta_endo_sept, aux_beta_epi_sept, aux_alpha_endo_rv,
                     aux_alpha_epi_rv, aux_beta_endo_rv, aux_beta_epi_rv):
-
+    """
+    Main FEniCS pipeline function: loads the XML mesh, solves the Laplace fields,
+    computes fiber/sheet orientations with LDRB, reads fibrosis tags from the .msh,
+    solves Laplace in the grey zone, and saves everything to XDMF/VTU.
+    Also exports to CARP format when carpOutput is provided.
+    """
     # mesh reading converted by dolfin-convert
     mesh = df.Mesh(meshname + '.xml')
     materials = df.MeshFunction("size_t", mesh, meshname + '_physical_region.xml')
@@ -163,14 +177,14 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
     mesh_f  = V_fiber.mesh()
     dofmap  = V_fiber.dofmap()
 
-    print("=== FunctionSpace do fiber ===")
-    print("  Elemento    :", V_fiber.ufl_element())
-    print("  Grau        :", V_fiber.ufl_element().degree())
-    print("  Dim. malha  :", mesh_f.topology().dim())
-    print("  # vértices  :", mesh_f.num_vertices())
-    print("  # células   :", mesh_f.num_cells())
+    print("=== Fiber FunctionSpace ===")
+    print("  Element     :", V_fiber.ufl_element())
+    print("  Degree      :", V_fiber.ufl_element().degree())
+    print("  Mesh dim    :", mesh_f.topology().dim())
+    print("  # vertices  :", mesh_f.num_vertices())
+    print("  # cells     :", mesh_f.num_cells())
     print("  # DOFs      :", V_fiber.dim())
-    print("  DOFs por célula :", dofmap.cell_dofs(0).shape[0])
+    print("  DOFs/cell   :", dofmap.cell_dofs(0).shape[0])
     print("")
 
     print(50*'=')
@@ -190,11 +204,9 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
     region_id.vector()[:] = cell_mark.array()
     region_id.rename("region_id", "region_id")
 
-    # =====================================================
-    # NOVO: criar tecido único (0=saudável, 1=core, 2=greyzone)
-    # a partir do .msh marcado em pathMesh
-    # =====================================================
-    print("Lendo tags de fibrose do .msh para criar TECIDO (0 saudavel, 1 core, 2 greyzone)…")
+    # Build a per-cell tissue field (0=healthy, 1=core, 2=greyzone) from the
+    # gmsh:physical tags written by markFibroseFromMsh.py
+    print("Reading fibrosis tags from .msh to build tissue field (0=healthy, 1=core, 2=greyzone)...")
     gmsh_mesh = meshio.read(pathMesh)
 
     tetra_index = None
@@ -203,7 +215,7 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
             tetra_index = i
             break
     if tetra_index is None:
-        raise RuntimeError("Nenhum elemento 'tetra' no gmsh para fibrose.")
+        raise RuntimeError("No 'tetra' elements found in the gmsh mesh.")
 
     tetra_cells = gmsh_mesh.cells[tetra_index].data
     phys_tags   = gmsh_mesh.cell_data["gmsh:physical"][tetra_index]
@@ -212,7 +224,7 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
     n_fenics_cells = mesh.num_cells()
 
     if n_gmsh_cells != n_fenics_cells:
-        print("[WARN] n_gmsh_cells != n_fenics_cells. Assumindo mesma ordem.")
+        print("[WARN] n_gmsh_cells != n_fenics_cells. Assuming same cell ordering.")
     else:
         print(f"  n_cells gmsh = n_cells fenics = {n_gmsh_cells}")
 
@@ -236,9 +248,7 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
     tecido_fn.rename("tecido", "tecido")
     # =====================================================
 
-    # =====================================================
-    # NOVO: Resolver laplace na greyzone
-    # =====================================================
+    # Solve Laplace in the grey zone to produce a smooth conductivity weight field
     V0 = tecido_fn.function_space()
     has_greyzone = np.any(tecido_fn.vector().get_local() == 2.0)
 
@@ -287,7 +297,7 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
     print("Done.")
 
 def convert_xdmf_to_vtu(meshname):
-
+    """Converte o arquivo XDMF gerado pelo FEniCS para VTU, formato requerido pelo HexaMeshFromVTK."""
     print(50*"=", flush = True)
     print("Converting .xdmf to .vtu")
     print(50*"=", flush = True)
@@ -303,10 +313,13 @@ def convert_xdmf_to_vtu(meshname):
 
 def mirror_msh_x(in_msh, out_msh, about='centroid', x0=None):
     """
-    Espelha a malha em relação a um plano perpendicular ao eixo X.
-    Se about='centroid', usa x0 = média dos x.
-    Se about='bbox',    usa x0 = centro do bbox em x.
-    Ou passe x0 explicitamente (float).
+    Mirrors the mesh about a plane perpendicular to the X axis.
+    about='centroid' uses x0 = mean X; about='bbox' uses x0 = bbox centre.
+    Pass x0 explicitly (float) to override.
+
+    NOTE: the actual mirroring is currently disabled (commented out below).
+    The function still re-writes the mesh to Gmsh v2 ASCII, which is required
+    by dolfin-convert regardless of whether the flip is applied.
     """
     m = meshio.read(in_msh)
     P = m.points.copy()
@@ -374,8 +387,10 @@ def extract_all_surfaces_stl(msh_path, output_dir, prefix):
     mesh = meshio.read(msh_path)
 
     # Build tag -> name mapping from field_data (dimension 2 = surface)
-    tag_to_name = {}
-    for name, (tag_id, dim) in mesh.field_data.items():
+    # Fallback to known BIV tags when field_data is absent (e.g. after fibrosis marking)
+    tag_to_name = {10: "BASE", 20: "RV", 30: "LV", 40: "EPI"}
+    for name, info in mesh.field_data.items():
+        tag_id, dim = info[0], info[1]
         if dim == 2:
             tag_to_name[int(tag_id)] = name
 
@@ -403,6 +418,58 @@ def extract_all_surfaces_stl(msh_path, output_dir, prefix):
         )
         meshio.write(out_path, surf_mesh)
         print(f"[OK] Surface '{label}' (tag {tag}) saved: {out_path}")
+
+
+def embed_surfaces_in_vtu(vtu_path, output_path, region_id_key="region_id"):
+    """
+    Lê um VTU com tetraedros tagueados por region_id, calcula as faces de
+    fronteira de cada região e as adiciona ao arquivo como células triangle,
+    mantendo o region_id correspondente. O resultado é salvo em output_path.
+    """
+    mesh = meshio.read(vtu_path)
+
+    tetra_block = next(c for c in mesh.cells if c.type == "tetra")
+    tetras = tetra_block.data
+    reg_ids = mesh.cell_data[region_id_key][0].astype(int).flatten()
+
+    face_combos = np.array([[0,1,2],[0,1,3],[0,2,3],[1,2,3]])
+
+    all_tri_faces = []
+    all_tri_tags  = []
+
+    for tag in np.unique(reg_ids):
+        subset = tetras[reg_ids == tag]
+        faces = subset[:, face_combos].reshape(-1, 3)
+        faces_sorted = np.sort(faces, axis=1)
+        _, idx, counts = np.unique(faces_sorted, axis=0,
+                                   return_index=True, return_counts=True)
+        boundary = faces[idx[counts == 1]]
+        all_tri_faces.append(boundary)
+        all_tri_tags.append(np.full(len(boundary), tag, dtype=int))
+
+    tri_faces = np.vstack(all_tri_faces)
+    tri_tags  = np.concatenate(all_tri_tags)
+
+    new_cells = mesh.cells + [meshio.CellBlock("triangle", tri_faces)]
+
+    new_cell_data = {}
+    for key, blocks in mesh.cell_data.items():
+        orig = blocks[0]
+        shape = (len(tri_faces),) + orig.shape[1:]
+        fill = np.full(shape, -1, dtype=orig.dtype)
+        if key == region_id_key:
+            fill = tri_tags.reshape(shape).astype(orig.dtype)
+        new_cell_data[key] = list(blocks) + [fill]
+
+    out_mesh = meshio.Mesh(
+        points=mesh.points,
+        cells=new_cells,
+        point_data=mesh.point_data,
+        cell_data=new_cell_data,
+    )
+    meshio.write(output_path, out_mesh)
+    print(f"[OK] VTU with embedded surfaces saved to: {output_path}")
+    print(f"     {len(tri_faces)} boundary triangles added.")
 
 
 # ==============================================================================

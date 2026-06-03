@@ -1,16 +1,20 @@
 import os
+import glob
 import logging
 from datetime import datetime
 import subprocess
 from src.mat2msh.readMat import readMat
 from src.mat2msh.readScar import msh_tag_to_ply
+from src.mat2msh.dicom_align import compute_dicom_transform, apply_transform_to_file
 import argparse
 import shutil
+import numpy as np
 from scipy.io import loadmat
 from src.msh2alg.generate_fiber_3D_biv import *
 
 
 def setup_logging(log_path):
+    """Configura logging simultâneo para arquivo e console, sobrescrevendo runs anteriores."""
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
     logger.handlers.clear()
@@ -28,7 +32,11 @@ def setup_logging(log_path):
 
 
 def execute_commands(input_file):
-   
+    """
+    Executa o pipeline completo para um arquivo .mat de paciente:
+    leitura e alinhamento das fatias → exportação de coordenadas → geração de superfícies
+    PLY/STL → malha volumétrica com Gmsh → marcação de fibrose → conversão para ALG/CARP.
+    """
     filename = os.path.basename(input_file)
     patient_id = os.path.splitext(filename)[0]
    
@@ -75,6 +83,8 @@ def execute_commands(input_file):
     if os.path.exists(msh_srf):
         shutil.rmtree(msh_srf)
     os.makedirs(msh_srf, exist_ok=True)
+    msh_int = f"{msh_srf}/intermediate"
+    os.makedirs(msh_int, exist_ok=True)
 
     if os.path.exists(scar_srf):
         shutil.rmtree(scar_srf)
@@ -103,10 +113,15 @@ def execute_commands(input_file):
     # Flag --no_invert_z para propagar aos subcomandos (por padrão inverte Z)
     invert_z_flag = "--no_invert_z" if args.no_invert_z else ""
 
+    # DICOM alignment forces --no_regression: per-slice shifts break the rigid pipeline→DICOM relation
+    if not args.no_align_dicom and not args.no_regression:
+        logging.info("[align_dicom] Forcing --no_regression (required for DICOM alignment).")
+        args.no_regression = True
+
     # Step 1: Process the .mat file
     logging.info(f"Processing the file: {input_file}")
     try:
-        readMat(input_file, output_dir=output_dir)
+        readMat(input_file, output_dir=output_dir, no_regression=args.no_regression)
         logging.info("MAT file processed successfully.")
     except FileNotFoundError:
         logging.error(f"Error: The file {input_file} does not exist.")
@@ -183,16 +198,27 @@ def execute_commands(input_file):
     logging.info(f"STL files generated successfully in: {stl_srf}")
     logging.info("===================================================")
 
+    lv_endo = f"{stl_srf}/{patient_id}-LVEndo.stl"
+    rv_endo = f"{stl_srf}/{patient_id}-RVEndo.stl"
+    rv_epi  = f"{stl_srf}/{patient_id}-RVEpi.stl"
+    lv_epi  = f"{stl_srf}/{patient_id}-LVEpi.stl"
+
+    # Step 4b: Align cardiac STLs to DICOM patient space (enabled by default)
+    R_dicom = t_dicom = None
+    if not args.no_align_dicom:
+        logging.info("===================================================")
+        logging.info("Applying DICOM alignment to cardiac STLs...")
+        R_dicom, t_dicom, rms = compute_dicom_transform(input_file)
+        logging.info(f"  det(R)={np.linalg.det(R_dicom):.4f}  RMSD={rms:.4f} mm")
+        for stl_path in [lv_endo, rv_endo, rv_epi, lv_epi]:
+            apply_transform_to_file(stl_path, R_dicom, t_dicom)
+        logging.info("DICOM transform applied to cardiac STLs.")
+        logging.info("===================================================")
+
     # Step 5: Generate the .msh file using Gmsh
     gmsh = "./scripts/gmsh-2.13.1/bin/gmsh"
     biv_mesh_geo = "./scripts/biv_mesh.geo"
 
-    lv_endo = f"{stl_srf}/{patient_id}-LVEndo.stl"
-    rv_endo = f"{stl_srf}/{patient_id}-RVEndo.stl"
-    rv_epi = f"{stl_srf}/{patient_id}-RVEpi.stl"
-    lv_epi = f"{stl_srf}/{patient_id}-LVEpi.stl"
-
-    msh = f"{msh_srf}/{patient_id}.msh"
     out_log = f"{log_dir}/{patient_id}_gmsh.log"
 
     flagScar = False
@@ -221,6 +247,10 @@ def execute_commands(input_file):
         logging.error(f"Error checking scar in '{aligned_mat_path}': {e}")
         flagScar = False
 
+    # Malha final sempre em patientMsh/; intermediárias em patientMsh/intermediate/
+    biv_final_msh = f"{msh_srf}/{patient_id}_biv_final.msh"
+    biv_gmsh_msh = f"{msh_int}/{patient_id}_biv_gmsh.msh" if flagScar else biv_final_msh
+
     if flagScar:
         scar_mode = "greyzone" if has_gz else "roi"
         logging.info("Extracting scars from the .mat file...")
@@ -241,17 +271,23 @@ def execute_commands(input_file):
             logging.error(f"Error executing readScar.py: {e}")
             return
 
+        if not args.no_align_dicom and R_dicom is not None:
+            scar_stls = glob.glob(f"{scar_srf}/*.stl")
+            for stl_path in scar_stls:
+                apply_transform_to_file(stl_path, R_dicom, t_dicom)
+            logging.info(f"DICOM transform applied to {len(scar_stls)} scar STL(s).")
+
     logging.info("===================================================")
     logging.info("Generating the mesh with GMSH...")
     logging.info("===================================================")
 
     os.system('{} -3 {} -merge {} {} {} -clmax {} -clmin {} -o {} 2>&1 {}'.format(
-        gmsh, lv_endo, rv_endo, rv_epi, biv_mesh_geo, args.cl_max, args.cl_min, msh, out_log))
-    logging.info(f"Model generated successfully: {msh}")
+        gmsh, lv_endo, rv_endo, rv_epi, biv_mesh_geo, args.cl_max, args.cl_min, biv_gmsh_msh, out_log))
+    logging.info(f"Model generated successfully: {biv_gmsh_msh}")
 
     # Extract BASE surface from the generated mesh and save as STL
     base_stl = f"{stl_srf}/{patient_id}-BASE.stl"
-    extract_base_stl(msh, base_stl)
+    extract_base_stl(biv_gmsh_msh, base_stl)
 
     if flagScar:
         logging.info("===================================================")
@@ -259,39 +295,38 @@ def execute_commands(input_file):
         logging.info("===================================================")
 
         lv_geo = "./scripts/lv_mesh.geo"
-        msh_teste = f"{msh_srf}/{patient_id}_lv.msh"
+        lv_gmsh_msh = f"{msh_int}/{patient_id}_lv_gmsh.msh"
         out_log_lv = f"{log_dir}/{patient_id}_gmsh_lv.log"
         cmd = '{} -3 {} -merge {} {} -o {} > {} 2>&1'.format(
-            gmsh, lv_endo, lv_epi, lv_geo, msh_teste, out_log_lv
+            gmsh, lv_endo, lv_epi, lv_geo, lv_gmsh_msh, out_log_lv
         )
 
         ret = os.system(cmd)
 
-        if not os.path.exists(msh_teste):
+        if not os.path.exists(lv_gmsh_msh):
             logging.error(f"[FATAL] LV-only mesh not generated. Exit code: {ret}. Log: {out_log_lv}")
             return
         elif ret != 0:
             logging.warning(f"[WARN] Gmsh returned non-zero code ({ret}) but mesh exists. Proceeding.")
 
-        logging.info(f"[OK] LV-only generated: {msh_teste}")
+        logging.info(f"[OK] LV-only generated: {lv_gmsh_msh}")
 
-        msh_lv = msh_teste
-        lv_marked = f"{msh_srf}/{patient_id}_lv_marked.msh"
+        lv_scar_msh = f"{msh_int}/{patient_id}_lv_scar.msh"
 
         mark_scar_lv_cmd = (
             f"python3 ./src/mat2msh/markFibroseFromMsh.py "
-            f"--msh {msh_lv} "
+            f"--msh {lv_gmsh_msh} "
             f"--stl_dir {scar_srf} "
-            f"--output_path {lv_marked}"
+            f"--output_path {lv_scar_msh}"
         )
         subprocess.run(mark_scar_lv_cmd, shell=True, check=True)
-        logging.info(f"[OK] Fibrosis marked on LV-only: {lv_marked}")
+        logging.info(f"[OK] Fibrosis marked on LV-only: {lv_scar_msh}")
 
         core_ply = os.path.join(scar_ply_smooth, f"{patient_id}_core_from_lv.ply")
         gz_ply   = os.path.join(scar_ply_smooth, f"{patient_id}_gz_from_lv.ply")
 
-        msh_tag_to_ply(lv_marked, tag=2, ply_path=core_ply)
-        msh_tag_to_ply(lv_marked, tag=3, ply_path=gz_ply)
+        msh_tag_to_ply(lv_scar_msh, tag=2, ply_path=core_ply)
+        msh_tag_to_ply(lv_scar_msh, tag=3, ply_path=gz_ply)
 
         core_stl = os.path.join(scar_stl_smooth, f"{patient_id}_core_smooth.stl")
         gz_stl   = os.path.join(scar_stl_smooth, f"{patient_id}_gz_smooth.stl")
@@ -306,31 +341,34 @@ def execute_commands(input_file):
             shell=True, check=True
         )
 
-        healthy_msh = f"{msh_srf}/{patient_id}.msh"
-        healthy_marked_smooth = f"{msh_srf}/{patient_id}_marked_smooth.msh"
-
         cmd2 = (
             f"python3 ./src/mat2msh/markFibroseFromMsh.py "
-            f"--msh {healthy_msh} "
+            f"--msh {biv_gmsh_msh} "
             f"--stl_dir {scar_stl_smooth} "
-            f"--output_path {healthy_marked_smooth}"
+            f"--output_path {biv_final_msh}"
         )
         subprocess.run(cmd2, shell=True, check=True)
-        logging.info(f"[OK] Healthy mesh re-marked with fibrosis: {healthy_marked_smooth}")
+        logging.info(f"[OK] BIV final mesh with fibrosis: {biv_final_msh}")
 
-        mirror_msh_x(msh_teste, f"{msh_srf}/{patient_id}_mirX_lv.msh", about="centroid")
+        mirror_msh_x(lv_gmsh_msh, f"{msh_int}/{patient_id}_lv_mirX.msh", about="centroid")
 
     logging.info("===================================================")
     logging.info("Converting msh to alg format...")
     logging.info("===================================================")
 
-    if flagScar:
-        marked_msh_path = f"{msh_srf}/{patient_id}_marked_smooth.msh"
-    else:
-        marked_msh_path = f"{msh_srf}/{patient_id}.msh"
+    marked_msh_path = biv_final_msh
+
+    # Extract all surfaces (BASE, LV, RV, EPI) from the final mesh as STL files
+    surfaces_output_dir = f"{output_dir}/surfaces"
+    logging.info("===================================================")
+    logging.info("Extracting surfaces from final mesh...")
+    extract_all_surfaces_stl(marked_msh_path, surfaces_output_dir, patient_id)
+    logging.info(f"Surfaces saved in: {surfaces_output_dir}")
+    logging.info("===================================================")
 
     try:
         hexa_log = f"{log_dir}/{patient_id}_hexa.log"
+        no_hexa_flag = "--no_hexa" if args.no_alg else ""
         msh2alg_command = (
             f"PYTHONPATH=. python3 ./src/msh2alg/msh2alg.py "
             f"-i {marked_msh_path} "
@@ -345,12 +383,16 @@ def execute_commands(input_file):
             f"--beta_endo_sept {args.beta_endo_sept} --beta_epi_sept {args.beta_epi_sept} "
             f"--alpha_endo_rv {args.alpha_endo_rv} --alpha_epi_rv {args.alpha_epi_rv} "
             f"--beta_endo_rv {args.beta_endo_rv} --beta_epi_rv {args.beta_epi_rv} "
-            f"--log_file {hexa_log}"
+            f"--log_file {hexa_log} "
+            f"{no_hexa_flag}"
         )
         subprocess.run(msh2alg_command, shell=True, check=True)
-        logging.info("===================================================")
-        logging.info("Mesh successfully converted to ALG format.")
-        logging.info("===================================================")
+        if args.no_alg:
+            logging.info("FEniCS/VTU done. ALG conversion skipped (--no_alg).")
+        else:
+            logging.info("===================================================")
+            logging.info("Mesh successfully converted to ALG format.")
+            logging.info("===================================================")
     except subprocess.CalledProcessError as e:
         logging.error(f"Error converting msh to alg: {e}")
         return
@@ -395,6 +437,9 @@ if __name__ == "__main__":
     parser.add_argument('--cl_min', type=float, default=1.0, help='Gmsh CharacteristicLengthMin: minimum element size in the mesh')
 
     parser.add_argument('--no_invert_z', action='store_true', help='Disable Z-axis flip (by default Z is mirrored at the center of [z_min, z_max]).')
+    parser.add_argument('--no_regression', action='store_true', help='Disable slice alignment by linear regression of barycenters in readMat. Preserves original DICOM pixel coordinates.')
+    parser.add_argument('--no_alg', action='store_true', help='Skip ALG/CARP conversion step (msh2alg). Useful for fast mesh inspection.')
+    parser.add_argument('--no_align_dicom', action='store_true', help='Disable DICOM alignment (by default the mesh is aligned to patient DICOM space using ImagePosition/Orientation from the .mat).')
     parser.add_argument('--alpha_endo_lv', type=float, default=30, help='Fiber angle on the LV endocardium')
     parser.add_argument('--alpha_epi_lv', type=float, default=-30, help='Fiber angle on the LV epicardium')
     parser.add_argument('--beta_endo_lv', type=float, default=0, help='Sheet angle on the LV endocardium')

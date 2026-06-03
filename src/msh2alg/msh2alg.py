@@ -5,6 +5,7 @@ from src.msh2alg.generate_fiber_3D_biv import *
 import subprocess
 
 def run_command_live(cmd_list, cwd=None):
+    """Executa um subprocesso imprimindo a saída em tempo real, com formatação especial para linhas de progresso."""
     process = subprocess.Popen(
         cmd_list,
         stdout=subprocess.PIPE,
@@ -25,6 +26,7 @@ def run_command_live(cmd_list, cwd=None):
         raise subprocess.CalledProcessError(process.returncode, cmd_list)
     
 def convert_msh_to_xml(pathMesh, meshname):
+    """Converte a malha Gmsh (.msh) para o formato XML do FEniCS usando dolfin-convert."""
     # Command to run dolfin-convert and convert the .msh mesh to .xml
     command = f"dolfin-convert {pathMesh} {meshname}.xml"
     os.system(command)
@@ -42,20 +44,31 @@ def run_msh2alg(
     alpha_endo_lv=30, alpha_epi_lv=-30, beta_endo_lv=0, beta_epi_lv=0,
     alpha_endo_sept=60, alpha_epi_sept=-60, beta_endo_sept=0, beta_epi_sept=0,
     alpha_endo_rv=80, alpha_epi_rv=-80, beta_endo_rv=0, beta_epi_rv=0,
-    log_file=None
+    log_file=None,
+    no_hexa=False,
 ):
-    #print(carp)
-    # --- ESPELHA O .MSH ANTES DE CONVERTER PARA XML ---
+    """
+    Converts the .msh to FEniCS XML, computes cardiac fibers with LDRB,
+    exports to VTU/XDMF, and optionally converts to ALG and CARP.
+    Fiber (alpha) and sheet (beta) angles are configurable per region (LV, septum, RV).
+    Set no_hexa=True to skip HexaMeshFromVTK and produce only VTU output.
+    """
+    # Re-write to Gmsh v2 ASCII (required by dolfin-convert); X-mirror is disabled inside mirror_msh_x
     mir_msh = os.path.splitext(pathMesh)[0] + "_mirX.msh"
-    mirror_msh_x(pathMesh, mir_msh, about="centroid")  # ou about="bbox" / x0=...
+    mirror_msh_x(pathMesh, mir_msh, about="centroid")
     pathMesh = mir_msh
 
     convert_msh_to_xml(pathMesh, meshname)
-    request_functions(pathMesh, meshname, carp, alpha_endo_lv, alpha_epi_lv, beta_endo_lv, 
+    request_functions(pathMesh, meshname, carp, alpha_endo_lv, alpha_epi_lv, beta_endo_lv,
                 beta_epi_lv, alpha_endo_sept, alpha_epi_sept, beta_endo_sept,
-                beta_epi_sept, alpha_endo_rv, alpha_epi_rv, 
-                beta_endo_rv, beta_epi_rv)    
-    print(50*"=", flush = True)
+                beta_epi_sept, alpha_endo_rv, alpha_epi_rv,
+                beta_endo_rv, beta_epi_rv)
+
+    if no_hexa:
+        print("Skipping HexaMeshFromVTK (--no_hexa).")
+        return
+
+    print(50*"=", flush=True)
     print("Converting to alg...")
     cmd = [
         './bin/HexaMeshFromVTK',
@@ -79,6 +92,7 @@ if __name__ == "__main__":
     parser.add_argument('--carp', type=str, default='', help='Output OpenCARP')
     parser.add_argument('--alg', type=str, default='', help='Output OpenAlg')
     parser.add_argument('--log_file', type=str, default=None, help='Path to log file for HexaMeshFromVTK output')
+    parser.add_argument('--no_hexa', action='store_true', help='Skip HexaMeshFromVTK; produce VTU/XDMF only (no ALG).')
 
     parser.add_argument('--dx', type=float, default=0.5)
     parser.add_argument('--dy', type=float, default=0.5)
@@ -115,4 +129,5 @@ if __name__ == "__main__":
         alpha_endo_rv=args.alpha_endo_rv, alpha_epi_rv=args.alpha_epi_rv,
         beta_endo_rv=args.beta_endo_rv, beta_epi_rv=args.beta_epi_rv,
         log_file=args.log_file,
+        no_hexa=args.no_hexa,
     )

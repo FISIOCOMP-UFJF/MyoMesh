@@ -6,16 +6,11 @@ from scipy.io import loadmat
 
 def adjust_resolution(setstruct, structures):
     """
-    Adjusts the coordinates of the structures to account for spatial resolution (ResolutionX, ResolutionY).
-    Calculates Z values based on SliceThickness and SliceGap.
+    Scales X and Y coordinates of all structures by the real pixel spacing
+    (ResolutionX/Y), converting from pixels to millimetres. Also identifies
+    slices with valid (non-NaN) data to avoid exporting empty slices.
 
-    Parameters:
-    - setstruct: Object containing the structures and resolution attributes.
-    - structures: Dictionary with structures to be adjusted.
-
-    Returns:
-    - Adjusted setstruct with new scaled coordinates.
-    - Indices of valid slices where at least one structure has valid data.
+    Returns the setstruct with scaled coordinates and the indices of valid slices.
     """
     resolution_x = getattr(setstruct, 'ResolutionX', 1.0)
     resolution_y = getattr(setstruct, 'ResolutionY', 1.0)
@@ -94,13 +89,10 @@ def adjust_resolution(setstruct, structures):
 
 def save_structures_to_txt(mat_filename, output_dir, invert_z=False):
     """
-    Saves the coordinates of structures (LVEndo, LVEpi, RVEndo, RVEpi) to unique .txt files,
-    containing all slices for each structure in MATLAB format.
-
-    Parameters:
-    - mat_filename: Path to the .mat file.
-    - output_dir: Directory where the files will be saved.
-    - invert_z: If True, mirrors Z around the center of [z_min, z_max].
+    Exports 3-D coordinates of LVEndo, LVEpi, RVEndo and RVEpi to .txt files,
+    one per structure, containing all points from all valid slices.
+    If invert_z=True, mirrors the Z axis around the midpoint of [z_min, z_max]
+    to correct MRI orientation (superior→inferior becomes inferior→superior).
     """
     # Create an output directory based on the current date
     output_path = output_dir
@@ -137,12 +129,12 @@ def save_structures_to_txt(mat_filename, output_dir, invert_z=False):
 
     dz = slice_thickness + slice_gap
 
-    # Limites do intervalo Z para o espelho
+    # Z range used as the mirror axis when invert_z is enabled
     z_min = (valid_indices[0]  + 1) * dz
     z_max = (valid_indices[-1] + 1) * dz
 
     if invert_z:
-        print(f"[invert_z] Espelhando Z em torno do centro do intervalo [{z_min:.4f}, {z_max:.4f}] mm")
+        print(f"[invert_z] Mirroring Z around midpoint of [{z_min:.4f}, {z_max:.4f}] mm")
 
     # Process each structure
     for name, (x_attr, y_attr) in structures.items():
@@ -156,7 +148,6 @@ def save_structures_to_txt(mat_filename, output_dir, invert_z=False):
             z_base = (valid_indices + 1) * (slice_thickness + slice_gap)
             #print(valid_indices) 
 
-            # Inverte Z se solicitado
             if invert_z:
                 z_base = z_min + z_max - z_base
 
@@ -192,7 +183,7 @@ def main():
     parser = argparse.ArgumentParser(description="Export structures from .mat to .txt.")
     parser.add_argument("--mat", type=str, required=True, help="Path to the aligned .mat file.")
     parser.add_argument("--output", type=str, default="output", help="Base output directory.")
-    parser.add_argument("--no_invert_z", action="store_true", help="Desativa a inversão do eixo Z (por padrão Z é espelhado no centro de [z_min, z_max]).")
+    parser.add_argument("--no_invert_z", action="store_true", help="Disable Z-axis mirroring (by default Z is reflected around the midpoint of [z_min, z_max]).")
     args = parser.parse_args()
 
     if not os.path.exists(args.mat):
