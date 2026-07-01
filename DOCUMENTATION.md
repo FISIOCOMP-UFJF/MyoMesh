@@ -27,7 +27,7 @@ Patient-specific cardiac modeling requires accurate three-dimensional representa
 - **Geometric reconstruction**: 2D contours (LV endocardium, LV epicardium, RV endocardium, RV epicardium) are extruded and triangulated into closed 3D surfaces, then meshed volumetrically using Gmsh with the Frontal-3D algorithm.
 - **Slice alignment**: Slice-to-slice translational misalignment (common in breath-hold MRI acquisitions) is corrected by computing the barycenter of each contour per slice and fitting a linear regression, which is then subtracted as a shift.
 - **Fiber orientation**: Myocardial fiber, sheet, and sheet-normal directions are assigned using the Laplace–Dirichlet Rule-Based (LDRB) method (Bayer et al., 2012), solving three Laplace boundary value problems with Dirichlet conditions on the endocardial, epicardial, and basal surfaces. Fiber helix and transverse angles are user-configurable per region (LV, septum, RV).
-- **Scar and fibrosis delineation**: When the input contains scar annotations (manual ROI or GreyZone maps from LGE-MRI), the pipeline segments and volumetrically tags myocardial regions: healthy tissue (tag 0), dense scar/core (tag 2), and border zone/grey zone (tag 3). Scar surfaces are extracted, smoothed, and used to mark tetrahedra whose centroids fall within the scar volume.
+- **Scar and fibrosis delineation**: When the input contains scar annotations (manual ROI or GreyZone maps from LGE-MRI), the pipeline segments and volumetrically tags myocardial regions: healthy tissue (tag 1), dense scar/core (tag 2), and border zone/gray zone (tag 3). Scar surfaces are extracted, smoothed, and used to mark tetrahedra whose centroids fall within the scar volume.
 - **Hexahedral output**: The tetrahedral mesh is resampled onto a regular hexahedral grid (`.alg`) for use in simulators requiring structured meshes, preserving fiber vectors and tissue tags per voxel.
 
 ---
@@ -78,20 +78,19 @@ Patient_X.mat  (2D MRI segmentations)
       │        Extracts scar contours from .mat (ROI or GreyZone.map).   │
       │        Transposes GreyZone matrix (X↔Y correction).              │
       │        Extrudes 2D contours into 3D volumes.                     │
-      │        Output: STL surfaces for core and grey zone.              │
+      │        Output: STL surfaces for core and gray zone.              │
       │                                                                   │
       │  [7] markFibroseFromMsh.py                                        │
       │        For each tetrahedron, tests if centroid lies inside        │
-      │        the scar STL. Tags elements: core=2, grey zone=3.         │
+      │        the scar STL. Tags elements: core=2, gray zone=3.         │
       │        Applies Laplacian smoothing to scar surfaces.             │
-      │        Output: Patient_X_marked_smooth.msh                       │
+      │        Output: Patient_X_biv_final.msh                           │
       └───────────────────────────────────────────────────────────────────┘
       │
       ▼
 [8] msh2alg.py
-      Reformats MSH (read→write as Gmsh v2 ASCII via mirror_msh_x; the
-      X-mirror itself is currently disabled — no geometric change).
-      Converts MSH → XML using dolfin-convert (FEniCS).
+      Rewrites MSH as Gmsh v2.2 ASCII into patientMsh/intermediate/
+      (required by dolfin-convert), then converts MSH → XML (FEniCS).
       │
       ▼
 [9] generate_fiber_3D_biv.py
@@ -99,7 +98,8 @@ Patient_X.mat  (2D MRI segmentations)
       Solves 3 Laplace problems (φ_lv, φ_rv, φ_epi) with GMRES + AMG.
       Calls ldrb.dolfin_ldrb() to compute fiber (f_0), sheet (s_0),
       and sheet-normal (n_0) vectors with user-defined angles.
-      Tags tissue regions (healthy=0, core=1, grey zone=2).
+      Builds the internal tissue field (healthy=0, core=1, gray zone=2),
+      derived from the physical mesh tags (healthy=1, core=2, gray zone=3).
       Converts output to VTU for visualization.
       Output: Patient_X.xdmf, Patient_X.vtu, Patient_X.pts/.elem/.lon
       │
@@ -132,7 +132,7 @@ MyoMesh expects a `.mat` file (MATLAB format) containing cardiac segmentations f
 | `SliceGap`                     | Inter-slice gap in mm (default: 0.64 mm if absent)    |
 | `ResolutionX`, `ResolutionY` | Pixel spacing in mm                                   |
 | `Roi` *(optional)*           | Manual ROI scar annotations                           |
-| `GreyZone.map` *(optional)*  | 3D label matrix: 0 = healthy, 1 = grey zone, 2 = core |
+| `GreyZone.map` *(optional)*  | 3D label matrix: 0 = healthy, 1 = gray zone, 2 = core |
 
 The pipeline automatically detects the presence of `Roi` or `GreyZone` data and activates the fibrosis workflow.
 
@@ -156,7 +156,7 @@ The pipeline automatically detects the presence of `Roi` or `GreyZone` data and 
 | --- | ----------------------- |
 | 0   | Healthy myocardium      |
 | 2   | Dense scar (core)       |
-| 3   | Border zone (grey zone) |
+| 3   | Border zone (gray zone) |
 
 **Surface boundary tags (Gmsh / LDRB boundary conditions):**
 
@@ -304,7 +304,7 @@ python3 execAll.py -i ./Patient_1.mat
 python3 execAll.py -i ./Patient_1.mat
 ```
 
-If `Roi` or `GreyZone` fields are present in the `.mat` file, the full scar workflow runs automatically (contour extraction → STL generation → smoothing → volumetric tagging: core=2, grey zone=3).
+If `Roi` or `GreyZone` fields are present in the `.mat` file, the full scar workflow runs automatically (contour extraction → STL generation → smoothing → volumetric tagging: core=2, gray zone=3).
 
 **Custom mesh density:**
 
@@ -440,13 +440,13 @@ Reads a `.txt` point cloud and builds a closed triangulated 3D surface. Resample
 Extracts scar/fibrosis regions from the `.mat` file. Supports two modes:
 
 - **ROI mode**: reads manual contour annotations from `setstruct.Roi`.
-- **GreyZone mode**: reads a 3D label matrix (`GreyZone.map`) with labels 0 (healthy), 1 (grey zone), 2 (core), detects contours per slice using scikit-image, and extrudes them into 3D volumes.
+- **GreyZone mode**: reads a 3D label matrix (`GreyZone.map`) with labels 0 (healthy), 1 (gray zone), 2 (core), detects contours per slice using scikit-image, and extrudes them into 3D volumes.
 
 Outputs STL surfaces for each fibrosis class.
 
 ### `src/mat2msh/markFibroseFromMsh.py`
 
-Marks fibrotic tetrahedra in the volumetric mesh. For each element, tests whether its centroid lies inside a fibrosis STL surface (ray casting). Assigns tags: core=2, grey zone=3. Outputs a tagged `.msh` file.
+Marks fibrotic tetrahedra in the volumetric mesh. For each element, tests whether its centroid lies inside a fibrosis STL surface (ray casting). Assigns tags: core=2, gray zone=3. Outputs a tagged `.msh` file.
 
 ### `src/msh2alg/generate_fiber_3D_biv.py`
 
