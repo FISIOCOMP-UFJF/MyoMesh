@@ -10,8 +10,11 @@ produced by the pipeline (STL, PLY, MSH), mapping it from the pipeline's interna
 frame to the real DICOM patient space (mm).
 
 Pipeline flips accounted for in the transform:
-  - makeSurface.py no longer negates Y (intert_y = False) -> right-handed frame
   - saveMsh.py mirrors Z around the midpoint of [z_min, z_max] (invert_z=True by default)
+  - the Segment row/column indexing (EndoX=row, EndoY=column) swaps two axes
+    relative to the DICOM convention, so the optimal transform includes a reflection
+    (det(R) = -1), recovered naturally by the SVD step (see _pixel_para_mundo).
+  - makeSurface.py does NOT negate Y (the legacy intert_y flag was removed).
 
 Note: computing R, t requires that barycenter regression (readMat.py) is DISABLED,
 because per-slice shifts break the rigid relationship between the pipeline frame and
@@ -49,7 +52,7 @@ def ler_geometria(mat_path):
 
 
 def _obter_pixels_contorno(s):
-    """Extrai pixelX, pixelY e índice de fatia (0-based) de todos os contornos."""
+    """Extract pixelX, pixelY and slice index (0-based) from all contours."""
     listaX, listaY, listaFatia = [], [], []
     contornos = [("EndoX", "EndoY"), ("EpiX", "EpiY"),
                  ("RVEndoX", "RVEndoY"), ("RVEpiX", "RVEpiY")]
@@ -76,20 +79,20 @@ def _obter_pixels_contorno(s):
 
 def _pixel_para_mundo(px, py, fatia, geom):
     """
-    Equação DICOM: pixels 1-based → coordenadas mm no espaço do paciente.
+    DICOM equation: 1-based pixels -> mm coordinates in patient space.
 
-    O Segment armazena ImagePosition da ÚLTIMA fatia DICOM (ele inverte a ordem
-    das fatias). Por isso o índice fatia=0 corresponde à última fatia DICOM e o
-    avanço se dá na direção -v_normal (de volta à primeira fatia).
+    Segment stores the ImagePosition of the LAST DICOM slice (it reverses the
+    slice order). So index fatia=0 corresponds to the last DICOM slice and the
+    advance goes in the -v_normal direction (back to the first slice).
 
-    Convenção do Segment (MATLAB): EndoX é o índice de LINHA (primeira dimensão
-    da matriz, direção vertical da imagem), EndoY é o índice de COLUNA (segunda
-    dimensão, direção horizontal). Por isso:
-      px (EndoX) → v_coluna (direção ao longo das colunas = vertical)
-      py (EndoY) → v_linha  (direção ao longo das linhas = horizontal)
+    Segment convention (MATLAB): EndoX is the ROW index (first matrix dimension,
+    vertical image direction), EndoY is the COLUMN index (second dimension,
+    horizontal direction). Therefore:
+      px (EndoX) -> v_coluna (direction along columns = vertical)
+      py (EndoY) -> v_linha  (direction along rows = horizontal)
 
-    Validado contra o torso DICOM do Patient_2: esta convenção dá intensidade
-    mediana 192.5 vs 168.7 da convenção inversa (px→v_linha, py→v_coluna).
+    Validated against the Patient_2 DICOM torso: this convention gives a median
+    intensity of 192.5 vs 168.7 for the inverse convention (px->v_linha, py->v_coluna).
     """
     return (geom["pos"]
             + (px[:, None] - 1) * geom["res_x"]     * geom["v_coluna"]
@@ -99,30 +102,30 @@ def _pixel_para_mundo(px, py, fatia, geom):
 
 def _frame_pipeline(px, py, fatia, geom):
     """
-    Reconstrói as coordenadas do contorno no frame interno do pipeline.
+    Reconstruct the contour coordinates in the pipeline's internal frame.
 
-    Com makeSurface.py usando intert_y=False (Y não é mais negado), o único flip
-    remanescente é o espelhamento de Z do saveMsh.py (invert_z=True por padrão).
-    Sem a negação de Y, o frame é right-handed e a transformação para o DICOM
-    sai como rotação pura (det=+1) em vez de reflexão.
+    The only flip applied is the Z mirroring from saveMsh.py (invert_z=True by
+    default); makeSurface.py no longer negates Y (the legacy intert_y flag was
+    removed). The reflection seen in the fit (det(R)=-1) comes from the row/column
+    axis swap in _pixel_para_mundo (Segment convention), not from this frame.
     """
     x = px * geom["res_x"]
     y = py * geom["res_y"]
     z = (fatia + 1) * geom["espessura"]
-    z = z.min() + z.max() - z                    # saveMsh.py espelha Z (invert_z padrão)
+    z = z.min() + z.max() - z                    # saveMsh.py mirrors Z (invert_z default)
     return np.column_stack([x, y, z])
 
 
 def _kabsch(origem, destino):
     """
-    Transformação ortogonal R e translação t que minimizam ||R·origem + t − destino||.
+    Orthogonal transform R and translation t minimizing ||R*origem + t - destino||.
 
-    NÃO força det(R)=+1: usa o R puro do SVD. Com intert_y=False o frame fica
-    right-handed e o ajuste sai como rotação pura (det=+1), RMSD≈0. (O R puro
-    capturaria também uma reflexão, caso o frame voltasse a ser left-handed.)
+    Does NOT force det(R)=+1: uses the raw R from the SVD. Since _pixel_para_mundo
+    swaps the row/column axes (Segment convention), the optimal fit includes a
+    reflection (det(R)=-1), recovered naturally by the SVD; RMSD~0.
 
-    NOTA: RMSD≈0 só atesta autoconsistência com _pixel_para_mundo/_frame_pipeline,
-    não correção vs DICOM real. Ver AVISO no topo do módulo.
+    NOTE: RMSD~0 only attests self-consistency with _pixel_para_mundo/_frame_pipeline,
+    not correctness vs the real DICOM. See WARNING at the top of the module.
     """
     c_o, c_d = origem.mean(0), destino.mean(0)
     U, _, Vt = np.linalg.svd((origem - c_o).T @ (destino - c_d))
@@ -134,10 +137,10 @@ def _kabsch(origem, destino):
 
 def compute_dicom_transform(mat_path):
     """
-    Calcula a transformação rígida do frame do pipeline para o espaço DICOM.
+    Compute the rigid transform from the pipeline frame to the DICOM space.
 
-    Retorna (R, t, rms): rotação 3x3, translação (3,) e o RMSD do ajuste em mm
-    (deve ser ~0 quando a regressão está desligada).
+    Returns (R, t, rms): 3x3 rotation, (3,) translation and the fit RMSD in mm
+    (should be ~0 when the regression is disabled).
     """
     geom, s = ler_geometria(mat_path)
     px, py, fatia = _obter_pixels_contorno(s)
@@ -148,10 +151,10 @@ def compute_dicom_transform(mat_path):
 
 
 def apply_transform_to_file(path, R, t):
-    """Aplica R, t aos pontos de um arquivo de malha/superfície (STL, PLY, MSH) in place.
+    """Apply R, t to the points of a mesh/surface file (STL, PLY, MSH) in place.
 
-    Se det(R) < 0 e o arquivo contém triângulos (STL/PLY), reverte o winding de
-    cada face para preservar a direção das normais externas após a reflexão.
+    If det(R) < 0 and the file contains triangles (STL/PLY), reverse the winding
+    of each face to preserve the outward normal direction after the reflection.
     """
     ext = os.path.splitext(path)[1].lower()
     fmt = "gmsh" if ext == ".msh" else None

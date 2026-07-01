@@ -23,7 +23,7 @@ def add_greyzone_shell(tetra, tags, core_tag=2, grey_tag=3):
                             [0, 2, 3],
                             [1, 2, 3]], dtype=int)
 
-    # mapeia face (3 nós globais ordenados) -> lista de células que usam essa face
+    # map face (3 sorted global nodes) -> list of cells using that face
     face_to_cells = {}
     for ci in range(n_tets):
         nodes = tetra[ci]
@@ -36,11 +36,11 @@ def add_greyzone_shell(tetra, tags, core_tag=2, grey_tag=3):
 
     grey_to_add = np.zeros(n_tets, dtype=bool)
 
-    # para cada face compartilhada, se alguma das células é core,
-    # marcamos as outras células da face como greyzone candidata
+    # for each shared face, if any of the cells is core,
+    # mark the other cells of the face as grey zone candidates
     for cells in face_to_cells.values():
         if len(cells) < 2:
-            continue  # face de fronteira, só 1 célula
+            continue  # boundary face, only 1 cell
 
         has_core = any(tags[ci] == core_tag for ci in cells)
         if not has_core:

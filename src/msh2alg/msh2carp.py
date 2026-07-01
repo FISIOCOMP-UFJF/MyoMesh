@@ -4,20 +4,20 @@
 # Bernardo M. Rocha, 2014
 #
 # Patch 2025-07-17:
-#   - Corrigida escrita do .elem (tipo correto, reindex 0-based consistente com .pts, região = 1º tag ou 1).
-#   - Inclusão opcional de fibras LDRB (mesh_fenics + fiber_fn/sheet_fn/normal_fn).
-#   - split(" ") -> split() para parsing mais robusto.
-#   - Adicionado .lon (1 vetor por elemento) mantendo o restante legado.
+#   - Fixed .elem writing (correct type, 0-based reindex consistent with .pts, region = first tag or 1).
+#   - Optional inclusion of LDRB fibers (mesh_fenics + fiber_fn/sheet_fn/normal_fn).
+#   - split(" ") -> split() for more robust parsing.
+#   - Added .lon (1 vector per element) keeping the rest legacy.
 #
 # Patch 2025-08-27:
-#   - Exporta APENAS tetraedros (elem_type == 4) no .elem e gera .fib/.lon 1:1 com esses TETs.
-#   - .pts permanece completo (sem compactação).
+#   - Exports ONLY tetrahedra (elem_type == 4) in .elem and generates .fib/.lon 1:1 with those TETs.
+#   - .pts stays complete (no compaction).
 #
 import numpy as np
 import os
 import sys
 
-CHANGE_BBOX = False  # mantém legado: se True, translada mesh p/ origem (cuidado!)
+CHANGE_BBOX = False  # keep legacy: if True, translates mesh to origin (careful!)
 
 # ------------------------------------------------------------------ #
 # Helpers
@@ -33,7 +33,7 @@ def _extract_vec_dg0(fn):
     """Convert FEniCS DG0 vector field -> (Nc,3) numpy array."""
     v = fn.vector().get_local()
     ncomp = fn.function_space().ufl_element().value_size()
-    assert ncomp == 3, "Campo vetorial esperado com 3 componentes."
+    assert ncomp == 3, "Vector field expected with 3 components."
     return v.reshape((-1, 3))
 
 # ------------------------------------------------------------------ #
@@ -44,17 +44,17 @@ def gmsh2carp(gmshMesh, outputMesh,
               normal_fn=None,
               round_dec=8):
     """
-    Converter Gmsh (.msh v2 ASCII) para CARP (.pts/.elem/.fib/.lon).
-    Sempre exporta APENAS TETRAs no .elem. O .fib/.lon terá uma linha por TET.
-    O .pts permanece completo (sem compactação).
+    Convert Gmsh (.msh v2 ASCII) to CARP (.pts/.elem/.fib/.lon).
+    Always exports ONLY TETs in .elem. The .fib/.lon will have one line per TET.
+    The .pts stays complete (no compaction).
     """
     ptsFile  = outputMesh + '.pts'
     elemFile = outputMesh + '.elem'
     fibFile  = outputMesh + '.fib'
-    lonFile  = outputMesh + '.lon'  # pode não ser escrito, dependendo do caso
+    lonFile  = outputMesh + '.lon'  # may not be written, depending on the case
 
     # ------------------------------------------------------------------
-    # Ler cabeçalho (legado: assume ordem fixa)
+    # Read header (legacy: assumes fixed order)
     # ------------------------------------------------------------------
     f = open(gmshMesh)
 
@@ -105,7 +105,7 @@ def gmsh2carp(gmshMesh, outputMesh,
     print(" Reading nodes: Done.")
     
     # ------------------------------------------------------------------
-    # Ler elementos
+    # Read elements
     # ------------------------------------------------------------------
     felem = open(elemFile,'w')
     line = f.readline()  # $Elements
@@ -130,7 +130,7 @@ def gmsh2carp(gmshMesh, outputMesh,
         region = tags[0] if tags else 1
         off = 3 + num_tags  # node data starts right after the tag list
 
-        # Mantém APENAS tetraedros
+        # Keep ONLY tetrahedra
         if elem_type == 4:  # tetra
             n1 = int(parts[off+0])
             n2 = int(parts[off+1])
@@ -138,12 +138,12 @@ def gmsh2carp(gmshMesh, outputMesh,
             n4 = int(parts[off+3])
             tup = (n1,n2,n3,n4)
         else:
-            # tipo não suportado -> ignora
+            # unsupported type -> skip
             continue
 
         elements += 1
-        nodes.append(tup)             # legado
-        elem_types.append(elem_type)  # aqui será sempre 4
+        nodes.append(tup)             # legacy
+        elem_types.append(elem_type)  # always 4 here
         elem_nodes.append(tup)
         elem_regions.append(region)
 
@@ -156,18 +156,18 @@ def gmsh2carp(gmshMesh, outputMesh,
     print(" Exported TET elements: %d" % elements)
 
     # ------------------------------------------------------------------
-    # Escrever .elem (apenas TET)
+    # Write .elem (TET only)
     # ------------------------------------------------------------------
     felem.write("%d\n" % (len(elem_types)))
     for t, nds, r in zip(elem_types, elem_nodes, elem_regions):
         nds0 = [id2idx[n] for n in nds]
-        # t é sempre 4 aqui
+        # t is always 4 here
         n1,n2,n3,n4 = nds0
         felem.write("Tt %d %d %d %d %d\n" % (n1,n2,n3,n4,r))
     felem.close()
-    
+
     # ------------------------------------------------------------------
-    # Escrever .fib e preparar .lon (1 linha por TET exportado)
+    # Write .fib and prepare .lon (1 line per exported TET)
     # ------------------------------------------------------------------
     ffib = open(fibFile,'w')
 
@@ -176,27 +176,27 @@ def gmsh2carp(gmshMesh, outputMesh,
                 sheet_fn    is not None and
                 normal_fn   is not None)
 
-    lon_lines = []  # só fibra (3 números) por elemento TET
+    lon_lines = []  # fiber only (3 numbers) per TET element
 
     if not use_ldrb:
         for _ in range(len(elem_types)):
             ffib.write("%f %f %f %f %f %f %f %f %f\n" % (1,0,0,0,1,0,0,0,1))
-            lon_lines.append((1.0,0.0,0.0))  # cabeçalho=1 -> só fibra
+            lon_lines.append((1.0,0.0,0.0))  # header=1 -> fiber only
         ffib.close()
-        # grava .lon mantendo cabeçalho simples "1"
+        # write .lon keeping the simple "1" header
         with open(lonFile, "w") as flon:
             flon.write("1\n")
             for fval in lon_lines:
                 flon.write("% .8e % .8e % .8e\n" % fval)
         return ptsFile, elemFile, fibFile, lonFile
 
-    # ----- extrair DG0 arrays -----
+    # ----- extract DG0 arrays -----
     f_arr = _extract_vec_dg0(fiber_fn)
     s_arr = _extract_vec_dg0(sheet_fn)
     n_arr = _extract_vec_dg0(normal_fn)
 
-    # ----- conectividade FEniCS -----
-    fen_cells  = mesh_fenics.cells()        # (Nc,4) se tetra
+    # ----- FEniCS connectivity -----
+    fen_cells  = mesh_fenics.cells()        # (Nc,4) if tetra
     fen_coords = mesh_fenics.coordinates()  # (Nf,3)
 
     fen_hash = {}
@@ -211,7 +211,7 @@ def gmsh2carp(gmshMesh, outputMesh,
 
     misses = 0
     for t, nds in zip(elem_types, elem_nodes):
-        # t é sempre 4 aqui e nds tem 4 nós
+        # t is always 4 here and nds has 4 nodes
         try:
             idxs = [id2idx[n] for n in nds]
             key  = tuple(sorted(tuple(np.round(vpts[idx], round_dec)) for idx in idxs))
@@ -234,7 +234,7 @@ def gmsh2carp(gmshMesh, outputMesh,
     if misses:
         print(f" [gmsh2carp] Warning: {misses} tetra(s) with no fiber match; using identity.")
 
-    # ---- escrever .lon (apenas fibra, 1 por TET) ----
+    # ---- write .lon (fiber only, 1 per TET) ----
     with open(lonFile, "w") as flon:
         flon.write("1\n")
         for fval in lon_lines:
@@ -247,7 +247,7 @@ def gmsh2carp(gmshMesh, outputMesh,
 
 
 # ------------------------------------------------------------------ #
-# (legado)
+# (legacy)
 # ------------------------------------------------------------------ #
 def _main():
     if (len(sys.argv) < 3):

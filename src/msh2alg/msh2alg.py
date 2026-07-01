@@ -2,10 +2,11 @@ import numpy
 import argparse
 import os
 from src.msh2alg.generate_fiber_3D_biv import *
+from src.msh2alg.generate_fiber_3D_biv import _read_msh_robust
 import subprocess
 
 def run_command_live(cmd_list, cwd=None):
-    """Executa um subprocesso imprimindo a saída em tempo real, com formatação especial para linhas de progresso."""
+    """Run a subprocess printing the output in real time, with special formatting for progress lines."""
     process = subprocess.Popen(
         cmd_list,
         stdout=subprocess.PIPE,
@@ -26,7 +27,7 @@ def run_command_live(cmd_list, cwd=None):
         raise subprocess.CalledProcessError(process.returncode, cmd_list)
     
 def convert_msh_to_xml(pathMesh, meshname):
-    """Converte a malha Gmsh (.msh) para o formato XML do FEniCS usando dolfin-convert."""
+    """Convert the Gmsh mesh (.msh) to the FEniCS XML format using dolfin-convert."""
     # Command to run dolfin-convert and convert the .msh mesh to .xml
     command = f"dolfin-convert {pathMesh} {meshname}.xml"
     os.system(command)
@@ -53,10 +54,17 @@ def run_msh2alg(
     Fiber (alpha) and sheet (beta) angles are configurable per region (LV, septum, RV).
     Set no_hexa=True to skip HexaMeshFromVTK and produce only VTU output.
     """
-    # Re-write to Gmsh v2 ASCII (required by dolfin-convert); X-mirror is disabled inside mirror_msh_x
-    mir_msh = os.path.splitext(pathMesh)[0] + "_mirX.msh"
-    mirror_msh_x(pathMesh, mir_msh, about="centroid")
-    pathMesh = mir_msh
+    # Convert to Gmsh v2 ASCII (required by dolfin-convert)
+    import meshio as _meshio
+    # Intermediate file: store in patientMsh/intermediate/ instead of the root
+    _mesh_dir = os.path.dirname(pathMesh)
+    _int_dir = os.path.join(_mesh_dir, "intermediate")
+    os.makedirs(_int_dir, exist_ok=True)
+    _base = os.path.splitext(os.path.basename(pathMesh))[0]
+    v2_msh = os.path.join(_int_dir, _base + "_gmsh22.msh")
+    _m = _read_msh_robust(pathMesh)
+    _meshio.write(v2_msh, _m, file_format='gmsh22', binary=False)
+    pathMesh = v2_msh
 
     convert_msh_to_xml(pathMesh, meshname)
     request_functions(pathMesh, meshname, carp, alpha_endo_lv, alpha_epi_lv, beta_endo_lv,

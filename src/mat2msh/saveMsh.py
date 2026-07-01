@@ -55,9 +55,9 @@ def adjust_resolution(setstruct, structures):
         return setstruct, None
 
     #print("--------------------------------------------------")
-    #print("Debug: Verificação das fatias válidas")
+    #print("Debug: check valid slices")
     #print(f"Tamanho total esperado das fatias: {num_slices}")
-    #print(f"Máscara de fatias válidas (1 = válido, 0 = NaN): {valid_slices_mask.astype(int)}")
+    #print(f"Valid slices mask (1 = valid, 0 = NaN): {valid_slices_mask.astype(int)}")
     #print("--------------------------------------------------")
 
 
