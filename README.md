@@ -79,15 +79,15 @@ This will:
 - `-i`: Path to the file with heart meshes.
 - `-r`: Discretization resolution in conversion to alg. Default value is 1000.
 - `-dx`, `-dy`, and `-dz`: Refer to the discretization for the `.vtu`. Default value is 0.50.
-- `--iterations`: Number of smoothing iterations applied to the scar/fibrosis surfaces (core and greyzone). Default value is 200.
+- `--iterations`: Number of smoothing iterations applied to the scar/fibrosis surfaces (core and gray zone). Default value is 200.
 - `--relaxation`: Relaxation factor controlling smoothing aggressiveness of the scar/fibrosis surfaces. Default value is 0.05.
 - `--mesh_iterations`: Number of smoothing iterations applied to the cardiac surfaces (RVEndo, LVEpi, LVEndo). Default value is 40.
 - `--mesh_relaxation`: Relaxation factor for cardiac surface smoothing. Default value is 0.02.
 - `--cl_max`: Gmsh maximum element size (`CharacteristicLengthMax`). Default value is 2.0.
 - `--cl_min`: Gmsh minimum element size (`CharacteristicLengthMin`). Default value is 1.0.
 - `--no_invert_z`: Disable Z-axis flip. By default, Z is mirrored at the center of [z_min, z_max]. Pass this flag to keep the original Z orientation.
-- `--no_align_dicom`: Disable DICOM coordinate alignment. By default the pipeline aligns all surfaces to the patient's DICOM space using `ImagePosition`/`ImageOrientation` from the `.mat` file. Pass this flag to keep the pipeline's internal coordinate frame. Note: enabling alignment forces `--no_regression` automatically.
-- `--no_regression`: Disable per-slice barycenter regression. Forced automatically when DICOM alignment is active.
+- `--no_align_dicom`: Disable DICOM coordinate alignment. By default the pipeline aligns all surfaces to the patient's DICOM space using `ImagePosition`/`ImageOrientation` from the `.mat` file. Pass this flag to keep the pipeline's internal coordinate frame.
+- `--no_regression`: Disable the per-slice barycenter regression (respiratory-motion correction). By default it runs together with the DICOM alignment.
 - `--no_alg`: Skip hexahedral (ALG/CARP) conversion. The FEniCS/fiber step still runs and produces `.vtu` and `.pts/.elem/.lon` — only the final `HexaMeshFromVTK` step is skipped.
 - `--alpha_endo_lv`: Fiber angle on the left ventricle (LV) endocardium. Default value is 30°.
 - `--alpha_epi_lv`: Fiber angle on the left ventricle (LV) epicardium. Default value is -30°.
@@ -135,7 +135,7 @@ Runs the full pipeline. If the `.mat` file has no ROI or GreyZone data, scar mar
 python3 execAll.py -i ./Patient_1.mat
 ```
 
-The pipeline automatically detects ROI or GreyZone data in the `.mat` file and runs the full scar marking workflow (core + greyzone segmentation, smoothing, and tagging).
+The pipeline automatically detects ROI or GreyZone data in the `.mat` file and runs the full scar marking workflow (core + gray zone segmentation, smoothing, and tagging).
 
 ---
 

@@ -64,7 +64,7 @@ def align_contour_phase(ring_ref, ring_next):
     best_shift = 0
     best_cost = np.inf
 
-    ref_xy = ring_ref[:, :2]  # usa só X e Y para comparar (ignora Z)
+    ref_xy = ring_ref[:, :2]  # use only X and Y to compare (ignore Z)
 
     for shift in range(n):
         rolled = np.roll(ring_next[:, :2], shift, axis=0)
@@ -84,7 +84,7 @@ def resample_ring(ring, n):
     # Close the ring before interpolation
     closed = np.vstack([ring, ring[0]])
     
-    # Calcula distâncias acumuladas
+    # Compute cumulative distances
     diffs = np.diff(closed, axis=0)
     dists = np.sqrt((diffs**2).sum(axis=1))
     cum_dist = np.concatenate([[0], np.cumsum(dists)])
@@ -93,7 +93,7 @@ def resample_ring(ring, n):
     if total == 0:
         return np.tile(ring[0], (n, 1))
     
-    # Pontos uniformemente espaçados
+    # Uniformly spaced points
     t_new = np.linspace(0, total, n, endpoint=False)
     
     resampled = np.zeros((n, ring.shape[1]))
@@ -276,7 +276,6 @@ if __name__ == "__main__":
     # Invert coordinates
     invert_z = False
     invert_x = False
-    intert_y = False
 
     user_input = {
         "print_ply": True,
@@ -295,9 +294,6 @@ if __name__ == "__main__":
     if invert_x and len(points0) > 0:
         points0[:, 0] = -points0[:, 0]
 
-    if intert_y and len(points0) > 0:
-        points0[:, 1] = -points0[:, 1]
-        
     if user_input["reshuffle_point_order"]:
         points = points0[::-1, :]
     else:

@@ -13,7 +13,7 @@ import meshio
 import pyvista as pv
 
 # ============================================================
-# Estrutura para ROIs clássicas (setstruct.Roi)
+# Structure for classic ROIs (setstruct.Roi)
 # ============================================================
 
 ROIEntry = namedtuple('ROIEntry', ['name', 'z', 'points'])
@@ -137,7 +137,7 @@ def load_gz_map_and_metadata(mat_path):
         gz_map = ss["Scar"]["GreyZone"]["map"]
     except Exception as e:
         raise RuntimeError(
-            "Não encontrei 'setstruct/Scar/GreyZone/map' no .mat."
+            "Could not find 'setstruct/Scar/GreyZone/map' in the .mat."
         ) from e
 
     lbl = np.array(gz_map)
@@ -202,7 +202,7 @@ def extract_contours_all_slices(
         
         for c in cs:
             # Mantem y=c[:,0] e x=c[:,1]
-            # Isso garante que a geometria não fique espelhada.
+            # This ensures the geometry is not mirrored.
             y_raw, x_raw = c[:, 0], c[:, 1]
 
             # ============================================================
@@ -306,7 +306,7 @@ def save_region_extruded_txts(polys_per_slice, dz, out_dir, region_name,
         z_base = z_offset + s * dz
         z_top  = z_base + dz
 
-        # Aplica inversão se solicitado
+        # Apply inversion if requested
         if invert_z:
             z_base, z_top = z_min + z_max - z_top, z_min + z_max - z_base
 
@@ -433,9 +433,9 @@ def msh_tag_to_ply(msh_path, tag=2, ply_path="fibrose_surface.ply"):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Extrai cicatriz a partir do .mat (ROI ou GreyZone) e gera STL para marcar fibrose."
+        description="Extract scar from the .mat (ROI or GreyZone) and generate STL to mark fibrosis."
     )
-    parser.add_argument("matfile", help="Caminho para o .mat alinhado (saída do readMat)")
+    parser.add_argument("matfile", help="Path to the aligned .mat (output of readMat)")
     parser.add_argument("--shiftx", default=None,
                         help="Caminho para endo_shifts_x.txt (usado em modo roi/greyzone)")
     parser.add_argument("--shifty", default=None,
@@ -521,7 +521,7 @@ def main():
         print(f"[GZ] Using z_offset = {z_offset} with per-slice shift correction.")
 
         S = lbl.shape[2]
-        # z_min/z_max baseados nos valid_indices da malha (igual ao saveMsh)
+        # z_min/z_max based on the mesh valid_indices (same as saveMsh)
         if epi_x.ndim == 3:
             valid_mask = ~np.isnan(epi_x[:, 0, :]).all(axis=0)
         else:

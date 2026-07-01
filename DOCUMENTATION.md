@@ -266,8 +266,8 @@ All steps are orchestrated automatically. Outputs are saved to `output/YYYYMMDD_
 | Parameter           | Description                                                                                                                                                                           | Default  |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
 | `--no_invert_z`   | Disable Z-axis mirroring. By default Z is reflected around the center of `[z_min, z_max]` to match anatomical orientation. Pass this flag to preserve the original MRI slice order. | disabled |
-| `--no_align_dicom` | Disable DICOM coordinate alignment. By default all surfaces are mapped to the patient's DICOM space using `ImagePosition`/`ImageOrientation` from the `.mat` file. When alignment is active, `--no_regression` is forced automatically (per-slice shifts break the rigid transform). | disabled |
-| `--no_regression` | Disable per-slice barycenter regression in `readMat.py`. Automatically forced when DICOM alignment is active.                                                                         | disabled |
+| `--no_align_dicom` | Disable DICOM coordinate alignment. By default all surfaces are mapped to the patient's DICOM space using `ImagePosition`/`ImageOrientation` from the `.mat` file. | disabled |
+| `--no_regression` | Disable the per-slice barycenter regression (respiratory-motion correction) in `readMat.py`. By default it runs together with the DICOM alignment.                                       | disabled |
 
 ### Fiber Angles (LDRB)
 
@@ -377,9 +377,19 @@ output/
         │   ├── PatientID-RVEpi.stl
         │   └── PatientID-BASE.stl
         ├── patientMsh/                         # Gmsh tetrahedral meshes
-        │   ├── PatientID.msh                   # Full biventricular mesh
-        │   ├── PatientID_lv.msh                # LV-only mesh (if fibrosis)
-        │   └── PatientID_marked_smooth.msh     # Mesh with fibrosis tags
+        │   ├── PatientID_biv_final.msh         # Final BIV mesh (input to msh2alg + surface extraction)
+        │   └── intermediate/                   # Intermediate meshes
+        │       ├── PatientID_biv_gmsh.msh      # Raw BIV from Gmsh (if fibrosis)
+        │       ├── PatientID_lv_gmsh.msh       # Raw LV-only from Gmsh (if fibrosis)
+        │       ├── PatientID_lv_scar.msh       # LV-only with fibrosis tags
+        │       └── PatientID_biv_final_gmsh22.msh  # Gmsh v2.2 ASCII (for dolfin-convert)
+        ├── surfaces/                           # Anatomical surfaces extracted from the final mesh
+        │   ├── PatientID-BASE.stl
+        │   ├── PatientID-RV.stl
+        │   ├── PatientID-LV.stl
+        │   └── PatientID-EPI.stl
+        ├── scarPly_raw/                        # Raw per-contour fibrosis surfaces (intermediate, discardable)
+        ├── scarSTL_raw/                        # Raw per-contour fibrosis surfaces (intermediate, discardable)
         ├── scarPly/                            # Fibrosis surfaces (PLY)
         ├── scarSTL/                            # Fibrosis surfaces (STL)
         ├── logs/                               # Gmsh and HexaMesh execution logs
@@ -440,11 +450,11 @@ Marks fibrotic tetrahedra in the volumetric mesh. For each element, tests whethe
 
 ### `src/msh2alg/generate_fiber_3D_biv.py`
 
-Core scientific module. Reads the FEniCS XML mesh, identifies boundary surfaces by tag, solves three Laplace problems (for the LV, RV, and epicardial scalar fields) using GMRES with AMG preconditioning, then calls `ldrb.dolfin_ldrb()` to compute rule-based fiber, sheet, and sheet-normal vectors with the user-specified angles. Saves results as XDMF/HDF5 and converts to VTU. Also provides utilities: `extract_base_stl()`, `mirror_msh_x()`, `msh_tag_to_ply()`.
+Core scientific module. Reads the FEniCS XML mesh, identifies boundary surfaces by tag, solves three Laplace problems (for the LV, RV, and epicardial scalar fields) using GMRES with AMG preconditioning, then calls `ldrb.dolfin_ldrb()` to compute rule-based fiber, sheet, and sheet-normal vectors with the user-specified angles. Saves results as XDMF/HDF5 and converts to VTU. Also provides utilities: `extract_base_stl()`, `extract_all_surfaces_stl()`, `embed_surfaces_in_vtu()`, `mirror_msh_x()`, `msh_tag_to_ply()`, and `_read_msh_robust()` (retries meshio reads to tolerate an intermittent Gmsh-ASCII parsing error).
 
 ### `src/msh2alg/msh2alg.py`
 
-Orchestrates the tetrahedral-to-hexahedral conversion: reformats the mesh via `mirror_msh_x` (the X-mirror is currently disabled, so this only rewrites as Gmsh v2 ASCII for `dolfin-convert`), converts from `.msh` to `.xml`, calls `generate_fiber_3D_biv.request_functions()` to assign fibers, then runs `HexaMeshFromVTK` to resample onto the hexahedral grid.
+Orchestrates the tetrahedral-to-hexahedral conversion: rewrites the input mesh as Gmsh v2.2 ASCII (required by `dolfin-convert`) into `patientMsh/intermediate/PatientID_biv_final_gmsh22.msh`, converts from `.msh` to `.xml`, calls `generate_fiber_3D_biv.request_functions()` to assign fibers, then runs `HexaMeshFromVTK` to resample onto the hexahedral grid. Use `--no_hexa` to stop after the VTU output and skip the hexahedral step. Mesh reads go through `_read_msh_robust()` to tolerate an intermittent Gmsh-ASCII parsing error in meshio.
 
 ### `src/msh2alg/msh2carp.py`
 
@@ -463,7 +473,7 @@ Gmsh geometry script defining the biventricular mesh topology. Specifies compoun
 - Laplace problems are solved with FEniCS 2019.1.0 (GMRES + AMG). Mesh size and element quality directly affect solver convergence.
 - Reducing `--cl_max` produces a finer tetrahedral mesh and more accurate fiber gradients, at higher computational cost.
 - The `--no_invert_z` flag is patient-specific: some MRI acquisitions store slices base-to-apex, others apex-to-base. Check the output geometry in ParaView if the mesh appears inverted.
-- **DICOM alignment (enabled by default):** The pipeline maps all surfaces to the patient's DICOM coordinate space using `ImagePosition` and `ImageOrientation` extracted from the `.mat` file. To keep the pipeline's internal frame, pass `--no_align_dicom`. Because per-slice barycenter regression breaks the rigid relationship to DICOM space, `--no_regression` is forced automatically when alignment is active.
+- **DICOM alignment (enabled by default):** The pipeline maps all surfaces to the patient's DICOM coordinate space using `ImagePosition` and `ImageOrientation` extracted from the `.mat` file. To keep the pipeline's internal frame, pass `--no_align_dicom`. The per-slice barycenter regression (respiratory-motion correction) runs together with the alignment by default; it introduces a small (~2 mm) non-rigid residual in the DICOM fit, accepted as a trade-off, and can be turned off with `--no_regression`.
 - **`--no_alg` still produces VTU:** Passing `--no_alg` skips only the final hexahedral resampling (`HexaMeshFromVTK`). The FEniCS fiber-assignment step still runs and outputs `.vtu`, `.xdmf`, and `.pts/.elem/.lon` files.
 - **Surface smoothing and self-intersections:** Low values of `--mesh_iterations` or `--mesh_relaxation` may produce self-intersecting STL surfaces, especially near the apex and RV insertion points, causing Gmsh to fail or generate a degenerate mesh. Increasing `--mesh_iterations` to 200 typically resolves this. However, excessive smoothing on patients with fibrosis may displace cardiac surface boundaries away from the scar region, compromising volumetric fibrosis marking accuracy. A value between 40 (default) and 200 should be chosen based on visual inspection of the output geometry.
 

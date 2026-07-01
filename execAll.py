@@ -14,7 +14,7 @@ from src.msh2alg.generate_fiber_3D_biv import *
 
 
 def setup_logging(log_path):
-    """Configura logging simultâneo para arquivo e console, sobrescrevendo runs anteriores."""
+    """Configure logging to file and console simultaneously, overwriting previous runs."""
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
     logger.handlers.clear()
@@ -33,9 +33,9 @@ def setup_logging(log_path):
 
 def execute_commands(input_file):
     """
-    Executa o pipeline completo para um arquivo .mat de paciente:
-    leitura e alinhamento das fatias → exportação de coordenadas → geração de superfícies
-    PLY/STL → malha volumétrica com Gmsh → marcação de fibrose → conversão para ALG/CARP.
+    Run the full pipeline for a patient .mat file:
+    slice reading and alignment -> coordinate export -> PLY/STL surface generation
+    -> volumetric mesh with Gmsh -> fibrosis marking -> conversion to ALG/CARP.
     """
     filename = os.path.basename(input_file)
     patient_id = os.path.splitext(filename)[0]
@@ -110,13 +110,13 @@ def execute_commands(input_file):
         shutil.rmtree(alg_output)
     os.makedirs(os.path.dirname(alg_output), exist_ok=True)
 
-    # Flag --no_invert_z para propagar aos subcomandos (por padrão inverte Z)
+    # --no_invert_z flag to propagate to subcommands (inverts Z by default)
     invert_z_flag = "--no_invert_z" if args.no_invert_z else ""
 
-    # DICOM alignment forces --no_regression: per-slice shifts break the rigid pipeline→DICOM relation
-    if not args.no_align_dicom and not args.no_regression:
-        logging.info("[align_dicom] Forcing --no_regression (required for DICOM alignment).")
-        args.no_regression = True
+    # DICOM alignment and barycenter regression both run by default: the per-slice
+    # respiratory-motion correction is kept (reviewers value it) and the resulting
+    # small (~2 mm) non-rigid residual in the DICOM fit is accepted as a trade-off.
+    # Disable the regression explicitly with --no_regression if needed.
 
     # Step 1: Process the .mat file
     logging.info(f"Processing the file: {input_file}")
@@ -247,7 +247,7 @@ def execute_commands(input_file):
         logging.error(f"Error checking scar in '{aligned_mat_path}': {e}")
         flagScar = False
 
-    # Malha final sempre em patientMsh/; intermediárias em patientMsh/intermediate/
+    # Final mesh always in patientMsh/; intermediate ones in patientMsh/intermediate/
     biv_final_msh = f"{msh_srf}/{patient_id}_biv_final.msh"
     biv_gmsh_msh = f"{msh_int}/{patient_id}_biv_gmsh.msh" if flagScar else biv_final_msh
 
@@ -349,8 +349,6 @@ def execute_commands(input_file):
         )
         subprocess.run(cmd2, shell=True, check=True)
         logging.info(f"[OK] BIV final mesh with fibrosis: {biv_final_msh}")
-
-        mirror_msh_x(lv_gmsh_msh, f"{msh_int}/{patient_id}_lv_mirX.msh", about="centroid")
 
     logging.info("===================================================")
     logging.info("Converting msh to alg format...")
