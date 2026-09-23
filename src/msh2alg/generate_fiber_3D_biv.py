@@ -147,7 +147,7 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
     bc3 = df.DirichletBC(V, 0, ffun, ldrb_markers["epi"])
     bc3.apply(u.vector())
 
-    u.rename("fenotipo","fenotipo")
+    u.rename("phenotype","phenotype")
     #--------
 
     # Compute the microstructure
@@ -263,7 +263,7 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
 
     tecido_fn.vector().set_local(tecido_arr)
     tecido_fn.vector().apply("insert")
-    tecido_fn.rename("tecido", "tecido")
+    tecido_fn.rename("tissue", "tissue")
     # =====================================================
 
     # Solve Laplace in the grey zone to produce a smooth conductivity weight field
@@ -291,7 +291,7 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
     peso_tecido.vector().set_local(peso_arr)
     peso_tecido.vector().apply("insert")
 
-    peso_tecido.rename("peso_tecido", "peso_tecido")
+    peso_tecido.rename("tissue_weight", "tissue_weight")
     # =====================================================
 
     print("Saving…")

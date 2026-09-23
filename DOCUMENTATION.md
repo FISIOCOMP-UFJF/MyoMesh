@@ -148,6 +148,7 @@ The pipeline automatically detects the presence of `Roi` or `GreyZone` data and 
 | `Patient_X.pts`  | OpenCARP              | Node coordinates                                             |
 | `Patient_X.elem` | OpenCARP              | Element connectivity and tissue tags                         |
 | `Patient_X.lon`  | OpenCARP              | Fiber and sheet vectors per element                          |
+| `Patient_X.fib`  | OpenCARP              | Fiber vectors per element                                    |
 | `pipeline.log`   | Log                   | Full timestamped execution log                               |
 
 **Tissue tags:**

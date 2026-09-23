@@ -426,7 +426,7 @@ if __name__ == "__main__":
     parser.add_argument('-dz', type=float, default=0.5, help='dz')
 
     parser.add_argument('--relaxation', type=float, default=0.05, help='Relaxation factor for scar/fibrosis surface smoothing')
-    parser.add_argument('--iterations', type=int, default=200, help='Number of iterations for scar/fibrosis surface smoothing')
+    parser.add_argument('--iterations', type=int, default=80, help='Number of iterations for scar/fibrosis surface smoothing')
 
     parser.add_argument('--mesh_relaxation', type=float, default=0.02, help='Relaxation factor for cardiac surface smoothing (RVEndo, LVEpi, LVEndo)')
     parser.add_argument('--mesh_iterations', type=int, default=40, help='Number of iterations for cardiac surface smoothing (RVEndo, LVEpi, LVEndo)')
