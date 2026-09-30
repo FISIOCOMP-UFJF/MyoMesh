@@ -4,6 +4,7 @@ import dolfin as df
 import ldrb
 import meshio
 import numpy as np
+from mpi4py import MPI
 from .msh2carp import gmsh2carp
 
 
@@ -169,6 +170,36 @@ def request_functions(pathMesh, meshname, carpOutput, aux_alpha_endo_lv, aux_alp
         beta_endo_rv=aux_beta_endo_rv,  # Sheet angle on the RV endocardium
         beta_epi_rv=aux_beta_epi_rv,
     )
+
+    solver = df.PETScKrylovSolver()
+    df.PETScOptions.set("ksp_type", "cg")
+    df.PETScOptions.set("ksp_norm_type", "unpreconditioned")
+    df.PETScOptions.set("ksp_atol", 1e-15)
+    df.PETScOptions.set("ksp_rtol", 1e-10)
+    df.PETScOptions.set("ksp_max_it", 10_000)
+    df.PETScOptions.set("ksp_error_if_not_converged", False)
+    df.PETScOptions.set("pc_type", "hypre")
+    df.PETScOptions.set("pc_hypre_type", "boomeramg")
+
+    solver.set_from_options()
+
+    apex = ldrb.ldrb.apex_to_base(mesh, [10,], ffun, solver=solver)
+
+    dof_x = V.tabulate_dof_coordinates()
+    apex_values = apex.vector().get_local()
+    local_max_val = apex_values.min()
+
+    local_apex_coord = dof_x[apex_values.argmin()]
+    comm = df.MPI.comm_world
+
+    global_max, apex_coord = comm.allreduce(
+        sendobj=(local_max_val, local_apex_coord),
+        op=MPI.MINLOC,
+    )
+
+    print("  Teste - Apex coord: ({0:.2f}, {1:.2f}, {2:.2f})".format(*apex_coord))
+
+    np.savetxt('apex_coord.txt', apex_coord)
 
     # OpenCarp
     if carpOutput:  # flagCarp
